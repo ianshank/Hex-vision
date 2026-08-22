@@ -1,0 +1,66 @@
+# Hex-vision L3 CI. Gates run solely through Makefile targets; L4 policy keeps this workflow required.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hex-vision-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@e3f3cf96a6157d90bd3d29b2f7aa51de3ca0d90d # v5.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Install governed tooling and hooks
+        run: make install
+      - name: Lint
+        run: make lint
+      - name: Types
+        run: make types
+      - name: Coverage
+        run: make cov
+      - name: Install secret scanner
+        run: go install github.com/zricethezav/gitleaks/v8@v8.28.0
+      - name: Expose secret scanner
+        run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Secret scan of tree and history
+        run: make secrets
+      - name: Specifications
+        run: make specs
+      - name: Install dependency scanner
+        run: go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.2.4
+      - name: Expose dependency scanner
+        run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Dependency audit
+        run: make audit
+      - name: Remote allowlist
+        run: make remotes
+      - name: Projection drift
+        run: make projections
+      - name: Traceability
+        run: make traceability
+
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: astral-sh/setup-uv@e3f3cf96a6157d90bd3d29b2f7aa51de3ca0d90d # v5.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Install governed tooling and hooks
+        run: make install
+      - name: Jetson pack conformance
+        run: make conformance PACK=jetson

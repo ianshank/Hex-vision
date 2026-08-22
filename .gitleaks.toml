@@ -1,0 +1,7 @@
+# Hex-vision secret scan policy. There are intentionally no broad path or regex
+# exclusions: an exception must carry a reason, owner, and expiry in this file.
+title = "Hex-vision gitleaks policy"
+
+[allowlist]
+# Empty by design. Keeping the table makes future exceptions visibly reviewable.
+description = "No secret patterns are currently exempted."

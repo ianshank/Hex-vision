@@ -1,0 +1,15 @@
+{
+  "_comment": "Governed decision: server changes require review. Secrets are intentionally absent; environment-variable references are resolved by the client.",
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["--yes", "@modelcontextprotocol/server-github@2025.4.8"],
+      "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"}
+    },
+    "huggingface": {
+      "command": "npx",
+      "args": ["--yes", "@huggingface/mcp-server@0.2.0"],
+      "env": {"HF_TOKEN": "${HF_TOKEN}"}
+    }
+  }
+}
