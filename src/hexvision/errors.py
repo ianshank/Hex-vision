@@ -33,6 +33,7 @@ __all__ = [
     "FrozenKeyOverrideError",
     "GateBlockedError",
     "GateFailure",
+    "GateFailureError",
     "HexVisionError",
     "MissingKeyError",
     "PackError",
@@ -103,17 +104,27 @@ class PackError(HexVisionError):
     exit_code = ExitCode.BLOCKED
 
 
-class GateFailure(HexVisionError):
+class GateFailureError(HexVisionError):
     """A gate ran to completion and found a real problem."""
 
     exit_code = ExitCode.FAILED
+
+
+#: Backwards-compatible alias for :class:`GateFailureError`.
+#:
+#: The class was renamed to satisfy the ``Error``-suffix naming convention that
+#: this repository lints for. The old name stays exported permanently: the
+#: public surface in :mod:`hexvision` is a compatibility contract, and silently
+#: breaking an import to win a style point is the kind of change this project
+#: exists to prevent.
+GateFailure = GateFailureError
 
 
 class GateBlockedError(HexVisionError):
     """A gate could not run and therefore must not report a pass.
 
     Raised when a required tool is absent, an input is unreadable, or an
-    allowlist is empty. The distinction from :class:`GateFailure` is the whole
+    allowlist is empty. The distinction from :class:`GateFailureError` is the whole
     of the fail-closed policy.
     """
 

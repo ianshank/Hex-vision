@@ -136,13 +136,11 @@ def run_gate(gate: Gate, config: Config) -> GateResult:
                 gate.name,
                 summary=f"{gate.name} failed",
                 clause=exc.clause or gate.clause,
-                findings=(
-                    _finding_from_error(gate, exc),
-                ),
+                findings=(_finding_from_error(gate, exc),),
                 measurements=elapsed(),
             )
         )
-    except Exception as exc:  # noqa: BLE001 - deliberate: an escaped exception must BLOCK.
+    except Exception as exc:  # Deliberately broad: an escaped exception must BLOCK.
         # Broad by design. The alternative is a traceback that exits non-zero
         # with no structured record, which is indistinguishable in CI from an
         # infrastructure failure and gets retried until it passes.

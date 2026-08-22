@@ -272,7 +272,7 @@ class GateResult:
         )
 
     @classmethod
-    def blocked(
+    def blocked(  # noqa: PLR0913 - keyword-only descriptive fields; see note below.
         cls,
         gate: str,
         *,
@@ -294,6 +294,14 @@ class GateResult:
                 separately from ``reason`` so the JSON consumer can surface a
                 fix without string-parsing prose.
             measurements: Anything measured before the block.
+
+        Note:
+            The argument-count lint is suppressed here deliberately. Every
+            parameter past ``gate`` is keyword-only, so there is no positional
+            call site to confuse, and the fields exist because a BLOCKED result
+            is the one an operator has to act on without further context:
+            collapsing ``reason`` and ``remediation`` into one string would
+            force the JSON consumer to parse prose to find the fix.
         """
         return cls(
             gate=gate,

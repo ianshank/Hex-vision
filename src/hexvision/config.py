@@ -45,10 +45,10 @@ from hexvision.errors import ConfigError, FrozenKeyOverrideError, MissingKeyErro
 from hexvision.observability import get_logger
 
 __all__ = [
+    "REPO_CONFIG_FILENAME",
     "Config",
     "ConfigLayer",
     "Provenance",
-    "REPO_CONFIG_FILENAME",
     "find_repo_root",
     "load_config",
 ]
@@ -285,7 +285,9 @@ class Config:
         Matching is on whole path segments, so a prefix of ``contract`` freezes
         ``contract.targets`` but not a hypothetical ``contractor`` key.
         """
-        return any(key == prefix or key.startswith(f"{prefix}.") for prefix in self._frozen_prefixes)
+        return any(
+            key == prefix or key.startswith(f"{prefix}.") for prefix in self._frozen_prefixes
+        )
 
     def get(self, key: str, default: Any = None) -> Any:
         """Return the value at a dotted key, or ``default`` when absent.
@@ -435,9 +437,7 @@ def load_config(
         """Merge one layer and record provenance for every key it sets."""
         for key, value in _flatten(data):
             previous = provenance.get(key)
-            shadowed = (
-                ((previous.layer, previous.value), *previous.shadowed) if previous else ()
-            )
+            shadowed = ((previous.layer, previous.value), *previous.shadowed) if previous else ()
             provenance[key] = Provenance(
                 key=key, value=value, layer=layer, source=source, shadowed=shadowed
             )
