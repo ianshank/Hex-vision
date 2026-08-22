@@ -118,12 +118,15 @@ required_fields = [
   "model_name", "version", "task", "input_shape", "precision",
   "target_runtime", "target_device", "dataset_id", "dataset_license",
   "trained_commit", "eval_metric", "eval_value", "eval_dataset_split",
-  "known_failure_modes", "owner",
+  "known_failure_modes", "owner", "artifact_path",
 ]
 allowed_precisions = ["fp32", "fp16", "int8", "int4"]
 # Named, not open: a runtime nobody has a latency budget for cannot be gated.
 allowed_runtimes = ["tensorrt", "onnxruntime", "hailort", "openvino", "tflite"]
 card_glob = "models/**/model-card.md"
+# Artifact pairing is explicit so this gate never guesses model formats.
+artifact_field = "artifact_path"
+artifact_globs = ["**/*.engine", "**/*.onnx", "**/*.plan", "**/*.tflite"]
 
 [robotics.latency]
 # Per-runtime inference latency budgets in milliseconds, measured at the
@@ -131,6 +134,7 @@ card_glob = "models/**/model-card.md"
 percentile = 95
 unit = "ms"
 measurement_field = "latency_p95_ms"
+percentile_field = "latency_percentile"
 [robotics.latency.budgets]
 tensorrt = 33.0
 onnxruntime = 66.0
@@ -144,6 +148,14 @@ tflite = 100.0
 required_runs = 3
 metric_tolerance = 0.001
 seed_fields = ["python_seed", "numpy_seed", "framework_seed"]
+# Versioned record names allow repositories to retain evidence across schema changes.
+record_globs = ["models/**/eval-runs.json", "models/**/eval-runs.toml"]
+toml_suffix = ".toml"
+schema_version_field = "schema_version"
+schema_version = 1
+model_name_field = "model_name"
+runs_field = "runs"
+metric_field = "metric_value"
 
 [robotics.safety_envelope]
 # FROZEN (see [meta.frozen]). These are declared bounds a mission config is
@@ -159,6 +171,21 @@ allowed_failsafe_actions = ["rtl", "land", "hold", "terminate"]
 widening_requires_decision = true
 mission_config_glob = "missions/**/*.toml"
 
+# Decision-log and baseline commands are policy, keeping safety review auditable.
+decision_id_field = "safety_decision_id"
+decision_log_path = "docs/decision-log.md"
+decision_id_pattern = "DEC-[0-9]+"
+baseline_command = ["git", "show", "HEAD:{path}"]
+git_timeout_seconds = 5
+# Per-bound directions prevent the RTL battery threshold from being treated as larger-is-wider.
+permissive_directions = { max_altitude_m = "higher", max_horizontal_speed_ms = "higher", max_tilt_deg = "higher", geofence_radius_m = "higher", rtl_battery_percent = "lower", failsafe_action = "weaker" }
+failsafe_strength = ["terminate", "land", "rtl", "hold"]
+[robotics.safety_envelope.numeric_limits]
+rtl_battery_percent = { minimum = 0, maximum = 100 }
+max_tilt_deg = { minimum = 0, maximum = 90 }
+geofence_radius_m = { exclusive_minimum = 0 }
+max_altitude_m = { exclusive_minimum = 0 }
+
 [robotics.hardware_in_loop]
 # A pack may declare that some gates only run where hardware exists. Those gates
 # must still be DECLARED here, so a missing HIL runner is a visible, named
@@ -167,3 +194,48 @@ optional_gates = ["hil_smoke", "sitl_mission"]
 # When the runner is absent the result is `skipped-declared`, which the
 # conformance suite treats as a failure unless a decision-log entry names it.
 absence_requires_decision = true
+runners = { hil_smoke = ["hexvision-hil-smoke"], sitl_mission = ["hexvision-sitl-mission"] }
+decision_log_path = "docs/decision-log.md"
+decision_id_pattern = "DEC-[0-9]+"
+timeout_seconds = 300
+
+
+# Pack target commands stay data so a different package manager or Make wrapper
+# is a reviewed config change rather than a fork of the Jetson integration.
+[packs.jetson]
+package_manager = "uv"
+runner = "run"
+[packs.jetson.targets]
+install = ["make", "install"]
+format = ["make", "format"]
+lint = ["make", "lint"]
+types = ["make", "types"]
+test = ["make", "test"]
+cov = ["make", "cov"]
+secrets = ["make", "secrets"]
+specs = ["make", "specs"]
+audit = ["make", "audit"]
+remotes = ["make", "remotes"]
+projections = ["make", "projections"]
+traceability = ["make", "traceability"]
+guard-probe = ["make", "guard-probe"]
+pre-pr = ["make", "pre-pr"]
+clean = ["make", "clean"]
+[packs.jetson.tools]
+install = "make"
+format = "make"
+lint = "make"
+types = "make"
+test = "make"
+cov = "make"
+secrets = "make"
+specs = "make"
+audit = "make"
+remotes = "make"
+projections = "make"
+traceability = "make"
+guard-probe = "make"
+pre-pr = "make"
+clean = "make"
+[packs.jetson.degraded_rationale]
+specs = "The Makefile structural validator reports the missing external validator on stderr."
