@@ -61,8 +61,39 @@ def install_fake_normalizer(repo: Path) -> None:
     executable.parent.mkdir(parents=True)
     executable.write_text(
         "#!/usr/bin/env bash\n"
-        "printf 'fake normalizer verdict\\n' >&2\n"
+        "printf 'fake normalizer verdict for %s\\n' \"${GIT_CONFIG_VALUE_0:-missing}\" >&2\n"
+        'if [ -n "${HV_EXPECTED_URL:-}" ] '
+        '&& [ "${GIT_CONFIG_VALUE_0:-}" != "$HV_EXPECTED_URL" ]; then\n'
+        "  printf 'normalizer input was ignored\\n' >&2\n"
+        "  exit 0\n"
+        "fi\n"
         'exit "${HV_NORMALIZER_EXIT:-0}"\n',
         encoding="utf-8",
     )
     executable.chmod(0o755)
+
+
+def install_fake_uv_normalizer(repo: Path) -> Path:
+    """Expose the same input-checking normalizer only through the uv fallback."""
+    install_fake_normalizer(repo)
+    venv_normalizer = repo / ".venv" / "bin" / "python"
+    normalizer = repo / ".fake-normalizer"
+    venv_normalizer.replace(normalizer)
+    shutil.rmtree(repo / ".venv")
+    bin_dir = repo / ".fake-bin"
+    bin_dir.mkdir()
+    uv = bin_dir / "uv"
+    uv.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -eu\n"
+        '[ "$1" = "run" ]\n'
+        "shift\n"
+        '[ "$1" = "--project" ]\n'
+        "shift 2\n"
+        '[ "$1" = "python" ]\n'
+        "shift\n"
+        f'exec "{normalizer}" "$@"\n',
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+    return bin_dir

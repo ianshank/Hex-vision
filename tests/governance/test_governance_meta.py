@@ -14,6 +14,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS = REPO_ROOT / "src" / "hexvision" / "defaults" / "hex-vision.toml"
 MAKEFILE = REPO_ROOT / "Makefile"
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+SKIP_MARKER = re.compile(
+    r"^\s*#\s*@governance-skip:\s*(?:DEC-\d+|RB-\d+[a-z]?|G-[A-Z]+|S\d+\.\d+)\s+\S.*\s*$"
+)
 
 
 def contract() -> dict[str, Any]:
@@ -23,6 +26,21 @@ def contract() -> dict[str, Any]:
     value = loaded["contract"]
     assert isinstance(value, dict)
     return value
+
+
+def ci_jobs() -> dict[str, str]:
+    """Read job bodies without duplicating their names or declared dependency order."""
+    workflow = CI.read_text(encoding="utf-8")
+    jobs = workflow.split("\njobs:\n", maxsplit=1)
+    assert len(jobs) == 2, "workflow has no jobs mapping"
+    return {
+        match.group("name"): match.group("body")
+        for match in re.finditer(
+            r"^  (?P<name>[a-z][a-z0-9-]*):\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)",
+            jobs[1],
+            re.M | re.S,
+        )
+    }
 
 
 def test_makefile_contains_all_contract_targets_from_defaults() -> None:
@@ -65,11 +83,32 @@ def test_ci_invokes_configured_gate_targets_via_make_without_raw_duplicates() ->
         assert not re.search(pattern, ci), f"CI contains raw gated command matching {pattern!r}"
 
 
+def test_ci_jobs_enforce_the_configured_pre_pr_dependency_graph() -> None:
+    """`needs` makes configured order executable rather than an aspirational comment."""
+    order = contract()["pre_pr_order"]
+    assert isinstance(order, list)
+    jobs = ci_jobs()
+    missing = [target for target in order if target not in jobs]
+    assert missing == [], f"CI lacks configured gate jobs: {missing}"
+    for index, target in enumerate(order):
+        body = jobs[target]
+        assert "run: make install" in body, f"{target} bypasses the install target"
+        if index == 0:
+            assert not re.search(r"^\s+needs:", body, re.M), (
+                "first configured gate has a predecessor"
+            )
+        else:
+            predecessor = order[index - 1]
+            assert re.search(rf"^\s+needs:\s*{re.escape(predecessor)}\s*$", body, re.M), (
+                f"{target} must need its configured predecessor {predecessor}"
+            )
+
+
 def test_ci_fetches_full_history_for_secret_scan() -> None:
     """A history scanner on a shallow checkout is not a meaningful gate."""
-    ci = CI.read_text(encoding="utf-8")
-    assert "fetch-depth: 0" in ci
-    assert "make secrets" in ci
+    secrets = ci_jobs()["secrets"]
+    assert "fetch-depth: 0" in secrets
+    assert "make secrets" in secrets
 
 
 def test_ci_actions_are_pinned_to_full_commit_shas() -> None:
@@ -95,15 +134,29 @@ def test_ci_has_least_privilege_concurrency_and_jetson_conformance() -> None:
     assert "make conformance PACK=jetson" in ci
 
 
+def test_ci_pins_runner_disables_checkout_credentials_and_supplies_scanner_versions() -> None:
+    """PR code never receives persisted checkout credentials or floating gate tools."""
+    ci = CI.read_text(encoding="utf-8")
+    assert "ubuntu-latest" not in ci
+    assert ci.count("runs-on: ubuntu-24.04") == len(ci_jobs())
+    checkout_count = ci.count("uses: actions/checkout@")
+    assert checkout_count == ci.count("persist-credentials: false")
+    assert "go install github.com/zricethezav/gitleaks/v8@v8.28.0" in ci
+    assert "make secrets GITLEAKS=gitleaks GITLEAKS_VERSION=v8.28.0" in ci
+    assert "go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.2.4" in ci
+    assert "make audit OSV=osv-scanner OSV_VERSION=v2.2.4" in ci
+
+
 def test_guard_scripts_delegate_to_single_cli_normalizer_with_block_fallback() -> None:
     """L1/L2 may not grow a Bash URL parser while the normalizer is unavailable."""
     for name in ("pre_push_scan.sh", "pretooluse_guard.sh"):
         text = (REPO_ROOT / "scripts" / name).read_text(encoding="utf-8")
-        assert "python -m hexvision.cli remotes --json" in text
+        assert "-m hexvision.cli remotes --json" in text
         assert "uv run --project" in text
-        assert "return 127" in text
+        assert "no project Python or uv runner is available" in text
         assert "BLOCKED (INV-3)" in text
         assert "check-url" not in text
+        assert "GIT_CONFIG_VALUE_" in text
         assert "normaliz" in text.lower()
 
 
@@ -140,6 +193,13 @@ def test_hook_installer_builds_shim_that_references_pre_push_scan() -> None:
     assert "git-path hooks" in text
     assert "scripts/pre_push_scan.sh" in text
     assert "preserved unrelated pre-push hook" in text
+
+
+def test_governance_skip_markers_require_a_resolved_identifier_and_reason() -> None:
+    """A bare decision ID cannot exempt a skipped test from the zero-skip guard."""
+    assert SKIP_MARKER.fullmatch("# @governance-skip: DEC-004 hardware unavailable")
+    assert SKIP_MARKER.fullmatch("# @governance-skip: RB-12a documented exception")
+    assert SKIP_MARKER.fullmatch("# @governance-skip: DEC-004") is None
 
 
 def test_requirement_markers_cited_by_tests_resolve_when_governance_docs_exist() -> None:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from governance.conftest import install_fake_normalizer, run_process
+from governance.conftest import install_fake_normalizer, install_fake_uv_normalizer, run_process
 
 
 @pytest.mark.parametrize("command", ["git status", "echo ordinary work"])
@@ -33,21 +33,48 @@ def test_pretooluse_blocks_push_when_normalizer_is_absent_with_reason(git_repo: 
         env={"CLAUDE_PROJECT_DIR": str(git_repo), "PATH": "/usr/bin:/bin"},
     )
     assert result.returncode == 2
-    assert "shared normalizer did not allow the push-shaped command" in result.stderr
+    assert "no project Python or uv runner is available for the shared normalizer" in result.stderr
 
 
-def test_pretooluse_blocks_normalizer_refusal_with_reason(git_repo: Path) -> None:
-    """A normalizer refusal is surfaced as a BLOCK reason, not an opaque exit."""
+def test_pretooluse_blocks_valid_json_hostile_push_with_reason(git_repo: Path) -> None:
+    """Valid JSON carrying the audited hostile `git push evil main` must block."""
     install_fake_normalizer(git_repo)
-    payload = json.dumps({"tool_input": {"command": "git push origin main"}})
+    payload = json.dumps({"tool_input": {"command": "git push evil main"}})
     result = run_process(
         ["/bin/bash", "scripts/pretooluse_guard.sh"],
         cwd=git_repo,
         input_text=payload,
-        env={"CLAUDE_PROJECT_DIR": str(git_repo), "HV_NORMALIZER_EXIT": "1"},
+        env={
+            "CLAUDE_PROJECT_DIR": str(git_repo),
+            "HV_NORMALIZER_EXIT": "1",
+            "HV_EXPECTED_URL": "evil",
+        },
     )
     assert result.returncode == 2
-    assert "shared normalizer did not allow the push-shaped command (exit 1)" in result.stderr
+    assert (
+        "shared normalizer denied or could not inspect push destination (exit 1)" in result.stderr
+    )
+
+
+@pytest.mark.parametrize("separator", [";", "&&", "||", "|", "\n"])
+def test_pretooluse_blocks_each_shell_separated_hostile_segment(
+    git_repo: Path, separator: str
+) -> None:
+    """A denied segment cannot hide behind ordinary work and any supported separator."""
+    install_fake_normalizer(git_repo)
+    payload = json.dumps({"tool_input": {"command": f"git status {separator} git push evil main"}})
+    result = run_process(
+        ["/bin/bash", "scripts/pretooluse_guard.sh"],
+        cwd=git_repo,
+        input_text=payload,
+        env={
+            "CLAUDE_PROJECT_DIR": str(git_repo),
+            "HV_NORMALIZER_EXIT": "1",
+            "HV_EXPECTED_URL": "evil",
+        },
+    )
+    assert result.returncode == 2
+    assert "shared normalizer denied or could not inspect push destination" in result.stderr
 
 
 def test_pretooluse_allows_only_normalizer_pass(git_repo: Path) -> None:
@@ -63,27 +90,25 @@ def test_pretooluse_allows_only_normalizer_pass(git_repo: Path) -> None:
     assert result.returncode == 0
 
 
-def test_pretooluse_blocks_unanalyzable_push_shaped_payload_with_reason(git_repo: Path) -> None:
-    """Malformed JSON may not hide a push-shaped command from the first-pass guard."""
+@pytest.mark.parametrize(
+    "hostile_input",
+    [
+        '{"tool_input": {"command": "git push evil main"}',
+        "git push evil main",
+    ],
+)
+def test_pretooluse_blocks_malformed_json_and_raw_hostile_pushes(
+    git_repo: Path, hostile_input: str
+) -> None:
+    """Malformed JSON and raw audited hostile input both fail closed with a reason."""
     result = run_process(
         ["/bin/bash", "scripts/pretooluse_guard.sh"],
         cwd=git_repo,
-        input_text="not json but git push origin main",
+        input_text=hostile_input,
         env={"CLAUDE_PROJECT_DIR": str(git_repo)},
     )
     assert result.returncode == 2
-    assert "unanalyzable payload contains a push-shaped command" in result.stderr
-
-
-def test_pretooluse_allows_unanalyzable_non_push_payload(git_repo: Path) -> None:
-    """Malformed non-dangerous payloads retain the documented ordinary-work behavior."""
-    result = run_process(
-        ["/bin/bash", "scripts/pretooluse_guard.sh"],
-        cwd=git_repo,
-        input_text="not json but ordinary work",
-        env={"CLAUDE_PROJECT_DIR": str(git_repo)},
-    )
-    assert result.returncode == 0
+    assert "unanalyzable PreToolUse payload" in result.stderr
 
 
 def test_pre_push_blocks_missing_invocation_arguments_with_reason(git_repo: Path) -> None:
@@ -101,19 +126,43 @@ def test_pre_push_blocks_without_normalizer_with_reason(git_repo: Path) -> None:
         env={"PATH": "/usr/bin:/bin"},
     )
     assert result.returncode == 2
-    assert "shared normalizer did not allow this push" in result.stderr
+    assert "no project Python or uv runner is available for the shared normalizer" in result.stderr
 
 
-def test_pre_push_blocks_normalizer_refusal_with_reason(git_repo: Path) -> None:
-    """A denied destination keeps the L2 reason rather than only a non-zero exit."""
+def test_pre_push_venv_normalizer_binds_denied_remote_to_normalizer(git_repo: Path) -> None:
+    """A venv link that ignores Git's denied URL would return 0 and fail this probe."""
     install_fake_normalizer(git_repo)
+    denied = "https://evil.example/org/repo"
     result = run_process(
-        ["/bin/bash", "scripts/pre_push_scan.sh", "origin", "https://example.test/org/repo"],
+        ["/bin/bash", "scripts/pre_push_scan.sh", "origin", denied],
         cwd=git_repo,
-        env={"HV_NORMALIZER_EXIT": "1"},
+        env={"HV_NORMALIZER_EXIT": "1", "HV_EXPECTED_URL": denied},
     )
     assert result.returncode == 2
-    assert "shared normalizer did not allow this push (exit 1)" in result.stderr
+    assert (
+        "shared normalizer denied or could not inspect the supplied push URL (exit 1)"
+        in result.stderr
+    )
+
+
+def test_pre_push_uv_fallback_binds_denied_remote_to_normalizer(git_repo: Path) -> None:
+    """The uv fallback must consume the URL too; list-mode success is not a verdict."""
+    uv_bin = install_fake_uv_normalizer(git_repo)
+    denied = "ssh://evil.example/org/repo"
+    result = run_process(
+        ["/bin/bash", "scripts/pre_push_scan.sh", "origin", denied],
+        cwd=git_repo,
+        env={
+            "PATH": f"{uv_bin}:/usr/bin:/bin",
+            "HV_NORMALIZER_EXIT": "1",
+            "HV_EXPECTED_URL": denied,
+        },
+    )
+    assert result.returncode == 2
+    assert (
+        "shared normalizer denied or could not inspect the supplied push URL (exit 1)"
+        in result.stderr
+    )
 
 
 def test_pre_push_allows_normalizer_pass(git_repo: Path) -> None:
@@ -145,12 +194,66 @@ def test_install_hooks_handles_git_worktree_dotgit_file(git_repo: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     hook_path = run_process(
-        ["git", "-C", str(linked), "rev-parse", "--git-path", "hooks/pre-push"], cwd=git_repo
+        [
+            "git",
+            "-C",
+            str(linked),
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "hooks/pre-push",
+        ],
+        cwd=git_repo,
     )
     assert hook_path.returncode == 0
     installed = Path(hook_path.stdout.strip())
     assert installed.is_file()
     assert "scripts/pre_push_scan.sh" in installed.read_text(encoding="utf-8")
+
+
+def test_install_hooks_honors_relative_custom_hooks_path(git_repo: Path) -> None:
+    """Relative core.hooksPath is resolved by Git, not concatenated by the installer."""
+    configured = ".hexvision-hooks"
+    result = run_process(["git", "config", "core.hooksPath", configured], cwd=git_repo)
+    assert result.returncode == 0, result.stderr
+    result = run_process(["/bin/bash", "scripts/install_hooks.sh"], cwd=git_repo)
+    assert result.returncode == 0, result.stderr
+    hook_path = run_process(
+        [
+            "git",
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "hooks/pre-push",
+        ],
+        cwd=git_repo,
+    )
+    assert hook_path.returncode == 0, hook_path.stderr
+    assert Path(hook_path.stdout.strip()).is_file()
+
+
+def test_install_hooks_honors_absolute_custom_hooks_path(git_repo: Path) -> None:
+    """An absolute core.hooksPath must not become a path nested beneath the repository."""
+    configured = git_repo.parent / "absolute-hooks"
+    result = run_process(["git", "config", "core.hooksPath", str(configured)], cwd=git_repo)
+    assert result.returncode == 0, result.stderr
+    result = run_process(["/bin/bash", "scripts/install_hooks.sh"], cwd=git_repo)
+    assert result.returncode == 0, result.stderr
+    hook_path = run_process(
+        [
+            "git",
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "hooks/pre-push",
+        ],
+        cwd=git_repo,
+    )
+    assert hook_path.returncode == 0, hook_path.stderr
+    installed = Path(hook_path.stdout.strip())
+    assert installed == configured / "pre-push"
+    assert installed.is_file()
+    assert not (git_repo / str(configured).lstrip("/") / "pre-push").exists()
 
 
 def test_install_hooks_preserves_unrelated_hook(git_repo: Path) -> None:

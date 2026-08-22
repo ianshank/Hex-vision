@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hex-vision hook installer (INV-4). Commit stamp: 10b37dd (2026-08-22).
+# Hex-vision hook installer (INV-4). Commit stamp: e0165e4 (2026-08-22).
 # It installs only the L2 fast-feedback shim; it does NOT make --no-verify safe,
 # protect a checkout never installed, or replace L3 CI/L4 policy. It preserves an
 # unrelated hook, supports .git files in worktrees through git --git-path, and fails
@@ -22,13 +22,10 @@ fi
 ROOT="$(git -C "$REPO" rev-parse --show-toplevel 2>/dev/null)" || { echo "install_hooks: $REPO is not a git worktree" >&2; exit 1; }
 SOURCE="$ROOT/scripts/pre_push_scan.sh"
 [ -f "$SOURCE" ] || { echo "install_hooks: $SOURCE is missing" >&2; exit 1; }
-HOOK_DIR="$(git -C "$ROOT" rev-parse --git-path hooks)" || { echo "install_hooks: cannot resolve hooks directory" >&2; exit 1; }
-case "$HOOK_DIR" in /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;; *) HOOK_DIR="$ROOT/$HOOK_DIR" ;; esac
-CONFIGURED="$(git -C "$ROOT" config --get core.hooksPath || true)"
-if [ -n "$CONFIGURED" ]; then
-  case "$CONFIGURED" in /*|[A-Za-z]:/*|[A-Za-z]:\\*) HOOK_DIR="$CONFIGURED" ;; *) HOOK_DIR="$ROOT/$CONFIGURED" ;; esac
-  echo "install_hooks: honoring configured core.hooksPath at $HOOK_DIR" >&2
-fi
+# Git, rather than shell prefix rules, resolves linked-worktree gitdirs and both
+# absolute and relative core.hooksPath values. --path-format avoids ROOT/<absolute>
+# mistakes and makes this result safe to create directly.
+HOOK_DIR="$(git -C "$ROOT" rev-parse --path-format=absolute --git-path hooks)" || { echo "install_hooks: cannot resolve hooks directory" >&2; exit 1; }
 mkdir -p "$HOOK_DIR"
 DESTINATION="$HOOK_DIR/pre-push"
 if [ -e "$DESTINATION" ] && ! grep -q 'scripts/pre_push_scan.sh' "$DESTINATION" 2>/dev/null; then
