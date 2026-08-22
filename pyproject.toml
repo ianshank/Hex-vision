@@ -1,0 +1,150 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hex-vision"
+version = "0.1.0"
+description = "Modular governance and gate harness for drone, robotics and edge-AI repositories."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Ian Cruickshank" }]
+keywords = ["governance", "robotics", "drone", "edge-ai", "ros2", "jetson", "spec-driven"]
+
+# Runtime dependencies are deliberately stdlib-only. A governance harness that
+# cannot run in a locked-down flight-software CI image is a harness nobody runs.
+# `tomllib` is stdlib from 3.11, which is why that is the floor.
+dependencies = []
+
+[project.optional-dependencies]
+# Gate tool versions are pinned EXACTLY. A floating linter version is a gate
+# whose definition changes under you; a bump is a reviewable diff.
+dev = [
+  "pytest==8.3.4",
+  "pytest-cov==6.0.0",
+  "coverage==7.6.10",
+  "ruff==0.9.2",
+  "mypy==1.14.1",
+  "vulture==2.14",
+]
+
+[project.scripts]
+hexvision = "hexvision.cli:main"
+
+[project.entry-points."hexvision.packs"]
+# Packs are discovered dynamically through entry points, never by an import
+# list in the core. A new stack pack is installable without editing core code.
+jetson = "hexvision.packs.jetson:pack"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hexvision"]
+
+# --------------------------------------------------------------------------
+# GATE THRESHOLDS — this file is their ONLY home.
+# No Makefile target and no CLI invocation passes a threshold flag; an
+# override would shadow this block and silently re-narrow the gate the moment
+# a subpackage is added.
+# --------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# --strict-markers: an unregistered marker is a typo, and a typo'd marker
+# silently deselects tests. --strict-config: a malformed config section fails
+# rather than being ignored.
+addopts = "--strict-markers --strict-config -ra"
+markers = [
+  "contract: asserts a clause of the Gate Harness Contract",
+  "conformance: asserts a pack conforms to the contract",
+  "robotics: asserts a robotics/edge-AI domain gate",
+]
+
+[tool.coverage.run]
+branch = true
+# `source` is mandatory, not cosmetic: without it a module that no test ever
+# imports is ABSENT from the report rather than sitting at 0%, which is the
+# single most common way a coverage floor is gamed in Python.
+source = ["src/hexvision"]
+relative_files = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+# Project floor. The per-file floor lives in [tool.hexvision.coverage] and is
+# enforced by hexvision.gates.coverage — coverage.py has no native per-file
+# threshold, so a project floor alone would let twenty well-tested modules
+# subsidise one untested one.
+fail_under = 90
+exclude_also = [
+  # Type-checking-only branches contain no runtime statements to cover.
+  "if TYPE_CHECKING:",
+  # Abstract methods have no body to execute; the contract they declare is
+  # covered through their implementations.
+  "@(abc\\.)?abstractmethod",
+  # A module's CLI entry guard is exercised through main(), not through import.
+  "if __name__ == .__main__.:",
+]
+
+[tool.coverage.paths]
+# Worktree builds and CI checkouts report different absolute prefixes for the
+# same file; without this, combined reports double-count.
+source = ["src/hexvision", "*/src/hexvision"]
+
+[tool.hexvision.coverage]
+# Per-file floors, enforced by `hexvision gate coverage` against coverage.json.
+per_file_lines = 90
+per_file_branches = 80
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # import order
+  "N",        # pep8-naming
+  "UP",       # pyupgrade
+  "B",        # bugbear
+  "A",        # builtin shadowing
+  "C4",       # comprehensions
+  "SIM",      # simplify
+  "PTH",      # pathlib over os.path
+  "RET",      # return consistency
+  "ARG",      # unused arguments
+  "TRY",      # exception antipatterns
+  "PL",       # pylint subset
+  "RUF",
+  "S",        # bandit security rules
+]
+ignore = [
+  # The harness composes shell commands by design (that IS the product); each
+  # subprocess call site carries its own argument-list justification and never
+  # uses shell=True. Enforced by S602/S604 remaining active.
+  "S603",
+  # TRY003 forbids long messages in raised exceptions, but a governance failure
+  # must tell the operator exactly which clause failed and how to fix it.
+  "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on failure paths, so `assert` (S101) is the point, and long
+# fixture literals are clearer inline than extracted.
+"tests/**/*.py" = ["S101", "PLR2004", "ARG001"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_unused_configs = true
+# An untyped decorator erases the signature of everything it wraps, which is
+# how a "strict" project quietly stops checking its own entry points.
+disallow_untyped_decorators = true
+files = ["src/hexvision", "tests"]
+
+[tool.vulture]
+min_confidence = 80
+paths = ["src/hexvision"]

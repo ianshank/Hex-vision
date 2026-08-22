@@ -1,0 +1,169 @@
+# Hex-vision packaged defaults.
+#
+# This file is the BASE LAYER of configuration, shipped inside the wheel. It is
+# never edited by an adopting repository; a repository overrides it with its own
+# `hex-vision.toml`, and only for keys it deliberately owns.
+#
+# Every value that a robotics team could reasonably need to change lives here or
+# in their overlay — nothing operational is embedded in Python source. Keys whose
+# `frozen` flag is set in [meta.frozen] refuse environment and CLI overrides,
+# because a quality bar an operator can lower from a shell is not a bar.
+
+[meta]
+config_version = "1.0"
+# Layers are applied in this order, later winning, and each resolved key records
+# which layer produced it so `hexvision config explain <key>` can answer
+# "why is this value what it is" without anyone reading code.
+layer_order = ["packaged", "repo", "pyproject", "env", "override"]
+env_prefix = "HEXVISION_"
+
+[meta.frozen]
+# Frozen key prefixes: resolvable from `packaged`, `repo` and `pyproject` only.
+# An attempt to set one through the environment or a CLI flag is an error, not a
+# silently-honoured override. Coverage floors are frozen for the reason the
+# contract states; safety envelopes are frozen because a flight-safety bound
+# changed from a shell leaves no reviewable diff.
+prefixes = ["coverage", "robotics.safety_envelope", "contract"]
+
+# --------------------------------------------------------------------------
+# The Gate Harness Contract this repository implements.
+# --------------------------------------------------------------------------
+[contract]
+version = "1.1"
+# The 15 target names, identical in every stack pack. A pack that renames one
+# has opted out of the shared CI template, conformance suite and audit narrative.
+targets = [
+  "install", "format", "lint", "types", "test", "cov", "secrets", "specs",
+  "audit", "remotes", "projections", "traceability", "guard-probe", "pre-pr",
+  "clean",
+]
+# `pre-pr` must chain these in exactly CI order. If it stops matching CI, a
+# local pass stops predicting a CI pass, which is the only reason to run it.
+pre_pr_order = [
+  "install", "lint", "types", "cov", "secrets", "specs", "audit", "remotes",
+  "projections", "traceability",
+]
+# Gates that must fail when their TOOL is absent, separately from failing when
+# their CHECK fails. A security control with a silent degraded mode produces a
+# green tick and no protection.
+fail_closed_on_missing_tool = ["secrets", "audit", "remotes", "cov", "types", "lint"]
+# Gates permitted a loud degraded mode: the absence must be printed on stderr on
+# EVERY run so it cannot become the invisible steady state.
+degrade_loudly = ["specs"]
+
+[contract.invariants]
+inv_1 = "Secret scan covers working tree AND history, and fails closed."
+inv_2 = "Zero skipped tests; a skip is a failure, not a status."
+inv_3 = "Exactly one URL normalizer, shared by the guard, the hook and CI."
+inv_4 = "Git hooks are installed by a script CI itself runs."
+inv_5 = "Gates are invoked only through the Makefile, never raw in CI."
+
+# --------------------------------------------------------------------------
+# INV-3: destination allowlist. An empty allowlist is BLOCK, never ALLOW.
+# --------------------------------------------------------------------------
+[remotes]
+allowlist = []
+# A bare username is not a credential: `ssh://git@github.com/org/repo` is the
+# most common SSH spelling and must be allowed. Only the `user:token@` form is a
+# finding, and it returns BLOCK rather than being normalized away, so the secret
+# gate still sees it.
+block_userinfo_with_password = true
+# Hosts whose scheme-less shorthand (`github.com:org/repo`) is recognised. Not a
+# permission list — normalization only; the allowlist above still decides.
+known_hosts = ["github.com", "gitlab.com", "huggingface.co", "codeberg.org"]
+
+# --------------------------------------------------------------------------
+# Requirement traceability lint.
+# --------------------------------------------------------------------------
+[traceability]
+matrix_path = "traceability/REQUIREMENT-TRACEABILITY.md"
+# Fixed status enum. A free-text status column is a column nobody can lint.
+statuses = ["Green", "Amber", "Red", "Inherited", "Waived"]
+# A Green row must cite a test node id that actually collects; an uncollectable
+# node id is the most common way a matrix drifts into fiction.
+require_test_node_for = ["Green"]
+# An Inherited row must state what it inherits and from which requirement.
+require_inherits_from_for = ["Inherited"]
+# A Waived row must cite a decision-log entry that authorises the waiver.
+require_decision_for = ["Waived"]
+decision_log_path = "docs/decision-log.md"
+decision_id_patterns = ["DEC-\\d+", "RB-\\d+[a-z]?", "G-[A-Z]+", "S\\d+\\.\\d+"]
+
+# --------------------------------------------------------------------------
+# Single-source projections: specs own scope, everything else is generated.
+# --------------------------------------------------------------------------
+[projections]
+data_module = "planning.roadmap_data"
+[[projections.outputs]]
+name = "roadmap"
+path = "docs/ROADMAP.md"
+renderer = "markdown_roadmap"
+[[projections.outputs]]
+name = "backlog"
+path = "planning/backlog.csv"
+renderer = "jira_csv"
+
+# --------------------------------------------------------------------------
+# Robotics / edge-AI domain gates. These are what make the harness applicable
+# to drone and robotics work rather than generic software.
+# --------------------------------------------------------------------------
+[robotics]
+# Artifacts a robotics repo ships that a generic harness never inspects.
+artifact_roots = ["models", "calibration", "missions"]
+
+[robotics.model_card]
+# A deployed perception model with no recorded provenance is an unreviewable
+# dependency. These fields are required in every model card the repo ships.
+required_fields = [
+  "model_name", "version", "task", "input_shape", "precision",
+  "target_runtime", "target_device", "dataset_id", "dataset_license",
+  "trained_commit", "eval_metric", "eval_value", "eval_dataset_split",
+  "known_failure_modes", "owner",
+]
+allowed_precisions = ["fp32", "fp16", "int8", "int4"]
+# Named, not open: a runtime nobody has a latency budget for cannot be gated.
+allowed_runtimes = ["tensorrt", "onnxruntime", "hailort", "openvino", "tflite"]
+card_glob = "models/**/model-card.md"
+
+[robotics.latency]
+# Per-runtime inference latency budgets in milliseconds, measured at the
+# percentile named below. A budget with no percentile is a number, not a budget.
+percentile = 95
+unit = "ms"
+measurement_field = "latency_p95_ms"
+[robotics.latency.budgets]
+tensorrt = 33.0
+onnxruntime = 66.0
+hailort = 25.0
+openvino = 50.0
+tflite = 100.0
+
+[robotics.determinism]
+# Perception regressions hide in nondeterminism. A model promoted to a flight
+# branch must reproduce its own eval to this tolerance across N runs.
+required_runs = 3
+metric_tolerance = 0.001
+seed_fields = ["python_seed", "numpy_seed", "framework_seed"]
+
+[robotics.safety_envelope]
+# FROZEN (see [meta.frozen]). These are declared bounds a mission config is
+# linted against — the harness never commands a vehicle, it refuses to let a
+# config that violates a declared bound reach a flight branch unreviewed.
+required_bounds = [
+  "max_altitude_m", "max_horizontal_speed_ms", "max_tilt_deg",
+  "geofence_radius_m", "rtl_battery_percent", "failsafe_action",
+]
+allowed_failsafe_actions = ["rtl", "land", "hold", "terminate"]
+# Widening a bound is a governed decision, not a config edit: the lint requires
+# a decision-log entry when a bound moves in the permissive direction.
+widening_requires_decision = true
+mission_config_glob = "missions/**/*.toml"
+
+[robotics.hardware_in_loop]
+# A pack may declare that some gates only run where hardware exists. Those gates
+# must still be DECLARED here, so a missing HIL runner is a visible, named
+# absence rather than an invisible one.
+optional_gates = ["hil_smoke", "sitl_mission"]
+# When the runner is absent the result is `skipped-declared`, which the
+# conformance suite treats as a failure unless a decision-log entry names it.
+absence_requires_decision = true
