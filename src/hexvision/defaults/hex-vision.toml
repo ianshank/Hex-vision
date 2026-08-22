@@ -30,6 +30,12 @@ prefixes = ["coverage", "robotics.safety_envelope", "contract"]
 # --------------------------------------------------------------------------
 [contract]
 version = "1.1"
+# Threshold flags in a pack command split quality policy across command lines
+# and pyproject. They are blocked so one frozen, reviewable source remains.
+forbidden_threshold_flags = ["--cov-fail-under", "--coverage.thresholds", "-Pcoverage.", "--fail-under"]
+# The source root is configurable for installed or monorepo layouts while
+# retaining the default contract-normalizer discovery behavior.
+source_path = "src"
 # The 15 target names, identical in every stack pack. A pack that renames one
 # has opted out of the shared CI template, conformance suite and audit narrative.
 targets = [
@@ -71,12 +77,20 @@ block_userinfo_with_password = true
 # Hosts whose scheme-less shorthand (`github.com:org/repo`) is recognised. Not a
 # permission list — normalization only; the allowlist above still decides.
 known_hosts = ["github.com", "gitlab.com", "huggingface.co", "codeberg.org"]
+# Git is invoked by argument vector so the remote check can inspect the
+# repository's configured destinations without interpreting shell syntax.
+git_executable = "git"
 
 # --------------------------------------------------------------------------
 # Requirement traceability lint.
 # --------------------------------------------------------------------------
 [traceability]
 matrix_path = "traceability/REQUIREMENT-TRACEABILITY.md"
+# These labels are configured instead of baked into the parser so a repository
+# can retain an established matrix vocabulary while still getting the same lint.
+columns = ["requirement id", "statement", "status", "test node id", "inherits-from", "decision ref", "notes"]
+tests_path = "tests"
+pytest_executable = "pytest"
 # Fixed status enum. A free-text status column is a column nobody can lint.
 statuses = ["Green", "Amber", "Red", "Inherited", "Waived"]
 # A Green row must cite a test node id that actually collects; an uncollectable
@@ -88,6 +102,9 @@ require_inherits_from_for = ["Inherited"]
 require_decision_for = ["Waived"]
 decision_log_path = "docs/decision-log.md"
 decision_id_patterns = ["DEC-\\d+", "RB-\\d+[a-z]?", "G-[A-Z]+", "S\\d+\\.\\d+"]
+# Requirement references in executable tests use their own configured grammar;
+# decision identifiers cannot safely double as requirement identifiers.
+requirement_id_patterns = ["R-\\d+"]
 
 # --------------------------------------------------------------------------
 # Single-source projections: specs own scope, everything else is generated.
@@ -102,6 +119,20 @@ renderer = "markdown_roadmap"
 name = "backlog"
 path = "planning/backlog.csv"
 renderer = "jira_csv"
+
+[coverage]
+# The report location is configurable because CI commonly writes artifacts
+# outside the checkout while local runs usually write beside pyproject.toml.
+report_path = "coverage.json"
+
+[makefile_authority]
+# The workflow is policy input: repositories may place CI definitions in a
+# provider-specific directory without changing the gate.
+workflow_path = ".github/workflows/ci.yml"
+# Raw command signatures forbidden in CI when their corresponding Make target
+# exists. Keeping these patterns in policy makes equivalent-tool changes reviewable.
+raw_command_patterns = ["ruff ", "mypy", "pytest", "pip-audit", "gitleaks"]
+
 
 # --------------------------------------------------------------------------
 # Robotics / edge-AI domain gates. These are what make the harness applicable
