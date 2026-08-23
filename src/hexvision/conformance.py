@@ -14,6 +14,7 @@ from typing import Final
 from hexvision.config import Config
 from hexvision.gates.contract import MakefileAuthorityGate, ZeroSkipAuditGate
 from hexvision.gates.model import Finding, GateResult, Severity
+from hexvision.invariant_verifiers import InvariantVerifier, ProbeEvidence, load_all
 from hexvision.packs.base import Pack, TargetSpec
 
 __all__ = ["check_pack"]
@@ -101,7 +102,42 @@ def _core_contract_gates() -> tuple[ZeroSkipAuditGate | MakefileAuthorityGate, .
     return (ZeroSkipAuditGate(), MakefileAuthorityGate())
 
 
-def check_pack(  # noqa: PLR0912, PLR0915 - each contract clause reports independently.
+def _invariant_evidence_finding(
+    invariant: str, evidence: ProbeEvidence, *, detail: str | None = None
+) -> Finding:
+    """Create a stable finding when a synthetic violation did not prove enforcement."""
+
+    suffix = f": {detail}" if detail else ""
+    return _finding(
+        10,
+        (
+            f"invariant {invariant!r} probe was not detected by its declared mechanism; "
+            f"probe={evidence.probe!r}, outcome={evidence.outcome!r}{suffix}"
+        ),
+        (
+            "Register an invariant verifier that detects the synthetic violation and "
+            "reports its reason."
+        ),
+        blocker=True,
+    )
+
+
+def _select_verifier(
+    verifiers: tuple[InvariantVerifier, ...],
+    invariant: str,
+    mechanism: str,
+    target: TargetSpec | None,
+    gate: object | None,
+) -> InvariantVerifier | None:
+    """Return exactly one installed proof for a mapping, refusing ambiguous evidence."""
+
+    matching = tuple(
+        verifier for verifier in verifiers if verifier.supports(invariant, mechanism, target, gate)
+    )
+    return matching[0] if len(matching) == 1 else None
+
+
+def check_pack(  # noqa: PLR0911, PLR0912, PLR0915 - each contract clause reports independently.
     config: Config, pack: Pack
 ) -> GateResult:
     """Return all conformance findings rather than hiding later violations behind one."""
@@ -119,6 +155,14 @@ def check_pack(  # noqa: PLR0912, PLR0915 - each contract clause reports indepen
         source_root = config.resolve_path("contract.source_path", clause=_CLAUSE)
         makefile_path = config.resolve_path("contract.makefile_path", clause=_CLAUSE)
         make_executable = str(config.require("contract.make_executable", clause=_CLAUSE))
+        no_op_commands = {
+            str(command).casefold()
+            for command in config.require("contract.conformance.no_op_commands", clause=_CLAUSE)
+        }
+        reason_patterns = {
+            _invariant_identifier(str(invariant)): str(pattern)
+            for invariant, pattern in config.section("contract.conformance.reason_patterns").items()
+        }
     except Exception as exc:
         return GateResult.blocked(
             "conformance", summary="contract policy unavailable", reason=str(exc), clause=_CLAUSE
@@ -211,10 +255,24 @@ def check_pack(  # noqa: PLR0912, PLR0915 - each contract clause reports indepen
         if gate.clause
     }
     target_names = {target.casefold() for target in targets}
+    gates_by_clause = {
+        _invariant_identifier(gate.clause): gate
+        for gate in (*_core_contract_gates(), *domain_gates)
+        if gate.clause
+    }
     invariant_mapping = {
         _invariant_identifier(str(invariant)): str(mechanism)
         for invariant, mechanism in enforcement.items()
     }
+    try:
+        verifiers = load_all()
+    except RuntimeError as exc:
+        return GateResult.blocked(
+            "conformance",
+            summary="invariant verifier registry cannot be read",
+            reason=str(exc),
+            clause=_CLAUSE,
+        )
     for configured_invariant in sorted(invariants):
         invariant = _invariant_identifier(configured_invariant)
         mechanism = invariant_mapping.get(invariant)
@@ -243,6 +301,63 @@ def check_pack(  # noqa: PLR0912, PLR0915 - each contract clause reports indepen
                     "Declare the named gate clause or Makefile target, or correct the mapping.",
                 )
             )
+        else:
+            target = targets.get(mechanism)
+            gate = gates_by_clause.get(_invariant_identifier(mechanism))
+            if target is not None and target.command[0].casefold() in no_op_commands:
+                findings.append(
+                    _invariant_evidence_finding(
+                        invariant,
+                        ProbeEvidence(
+                            probe="synthetic invariant violation",
+                            detected=False,
+                            outcome=f"declared command begins with {target.command[0]!r}",
+                            reason="",
+                        ),
+                        detail="declared command is a configured no-op",
+                    )
+                )
+                continue
+            verifier = _select_verifier(verifiers, invariant, mechanism, target, gate)
+            if verifier is None:
+                findings.append(
+                    _invariant_evidence_finding(
+                        invariant,
+                        ProbeEvidence(
+                            probe="synthetic invariant violation",
+                            detected=False,
+                            outcome="no unambiguous registered verifier",
+                            reason="",
+                        ),
+                    )
+                )
+                continue
+            try:
+                evidence = verifier.verify(config, mechanism, target, gate)
+            except Exception as exc:
+                findings.append(
+                    _invariant_evidence_finding(
+                        invariant,
+                        ProbeEvidence(
+                            probe="synthetic invariant violation",
+                            detected=False,
+                            outcome=f"verifier raised {type(exc).__name__}: {exc}",
+                            reason="",
+                        ),
+                    )
+                )
+                continue
+            expected_reason = reason_patterns.get(invariant)
+            if not evidence.detected:
+                findings.append(_invariant_evidence_finding(invariant, evidence))
+            elif expected_reason is None or re.search(expected_reason, evidence.reason) is None:
+                findings.append(
+                    _invariant_evidence_finding(
+                        invariant,
+                        evidence,
+                        detail=f"reason did not match configured pattern {expected_reason!r}",
+                    )
+                )
     for gate in domain_gates:
         if not gate.clause or not gate.description:
             findings.append(

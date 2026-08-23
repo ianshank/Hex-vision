@@ -48,4 +48,4 @@ Hand every diff to a reviewer before completion, including tooling, configuratio
 Changing `.mcp.json`, `.claude/settings.json`, a hook, or a plugin source is a governed decision, not housekeeping. The shell guard cannot retroactively govern a server enabled by configuration.
 
 ## Local gates
-`make pre-pr` invokes every CI gate in contract order. Use `make specs` and `hexvision conformance --pack jetson`; do not reconstruct their commands manually.
+`make pre-pr` invokes every configured CI gate in contract order, including conformance. Use `make specs` and `hexvision conformance --pack jetson`; do not reconstruct their commands manually.

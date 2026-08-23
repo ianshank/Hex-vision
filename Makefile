@@ -195,9 +195,9 @@ guard-probe: ## Show the PreToolUse guard's verdict for CMD, with tracing
 
 # --- the pre-PR gate ------------------------------------------------------
 
-pre-pr: install lint types cov secrets specs audit remotes projections traceability ## Everything CI runs, in CI order
+pre-pr: install lint types cov secrets specs audit remotes projections traceability conformance ## Every configured CI gate, in CI order
 	@echo
-	@echo "pre-PR validation complete — every gate CI runs has passed locally."
+	@echo "pre-PR validation complete — every configured CI gate has passed locally."
 
 clean: ## Remove build/test caches (never touches tracked files)
 	rm -rf $(ROOT)/.pytest_cache $(ROOT)/.mypy_cache $(ROOT)/.ruff_cache \
