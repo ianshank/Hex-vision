@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from hexvision.config import load_config
 from tests.conftest import assert_subject_under_test_is_this_checkout
 from tests.governance.conftest import run_process
 
@@ -386,3 +387,25 @@ def test_checkout_guard_rejects_a_foreign_checkout(tmp_path: Path) -> None:
     message = str(excinfo.value)
     assert "does not belong to the checkout under test" in message
     assert str(foreign.resolve()) in message
+
+
+def test_ambient_environment_overrides_cannot_reach_a_test(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No configuration variable from the developer's shell survives into a test.
+
+    The configuration engine treats the environment as a genuine precedence
+    layer, so without this guarantee an exported override would silently change
+    what the suite resolves and the same commit would pass on one machine and
+    fail on another. Asserting the absence directly is what makes the guarantee
+    checkable; asserting a single known variable would only pin the one case
+    that happened to be noticed.
+    """
+    prefix = str(load_config().require("meta.env_prefix"))
+
+    assert [name for name in os.environ if name.startswith(prefix)] == []
+
+    # The layer itself must still work when a test asks for it explicitly, or
+    # the isolation above would have silently disabled a shipped feature.
+    monkeypatch.setenv(f"{prefix}REMOTES__ALLOWLIST", '["explicitly.example.com"]')
+    assert load_config().require("remotes.allowlist") == ["explicitly.example.com"]

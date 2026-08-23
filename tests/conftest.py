@@ -7,6 +7,7 @@ constructed skip calls exist only in pytest's accounting.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
@@ -19,6 +20,10 @@ import hexvision
 from hexvision.config import Config, load_config
 from hexvision.decision_log import decision_ids
 from tests.support.process import coverage_controls_sanitized, run_process
+
+#: Repository root, derived from this file's location so the suite does not
+#: depend on the working directory pytest happened to be invoked from.
+_REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 
 _SKIP = re.compile(r"^\s*#\s*@governance-skip:\s*(\S+)\s+(\S.*)\s*$")
 
@@ -230,6 +235,30 @@ def tmp_repo(tmp_path: Path) -> Callable[[str], Path]:
         return tmp_path
 
     return create
+
+
+@pytest.fixture(autouse=True)
+def isolate_tests_from_ambient_hexvision_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remove ambient ``HEXVISION_`` variables for the duration of every test.
+
+    The configuration engine treats the environment as a real precedence layer,
+    which is correct for an operator but wrong for a test: a developer who has
+    exported an override in their shell would silently change what the suite
+    resolves. That produces the worst possible failure mode, because the same
+    commit passes on one machine and fails on another for a reason no diff shows.
+
+    This was not hypothetical. Exporting a wider ``remotes.allowlist`` in order to
+    push through a credential proxy turned three unrelated allowlist tests red,
+    since they resolve real configuration rather than a fixture. Tests that want
+    an override now have to ask for one explicitly through ``monkeypatch``, which
+    is also the only way a reader can tell from the test body that it is
+    exercising the environment layer at all.
+    """
+    prefix = str(load_config(root=_REPOSITORY_ROOT).require("meta.env_prefix"))
+    for name in [key for key in os.environ if key.startswith(prefix)]:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)
