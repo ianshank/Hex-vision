@@ -11,7 +11,7 @@ from hexvision.gates.model import GateStatus, Severity
 from hexvision.robotics.latency import LatencyBudgetGate
 
 
-# Traceability: R-11
+# Traceability: R-11 [Measurement within configured budget, Ungoverned latency claim]
 def test_latency_pass_and_headroom(passing_repo: Any) -> None:
     """Passing models retain measured margin for later audit interpretation."""
     root = passing_repo()

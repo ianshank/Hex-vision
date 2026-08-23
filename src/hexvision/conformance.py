@@ -97,6 +97,37 @@ def _makefile_prerequisites(path: Path, target: str) -> tuple[str, ...] | None:
     return None
 
 
+def _makefile_targets(path: Path) -> set[str]:
+    """Return declared Makefile targets without evaluating recipes or variables.
+
+    Conformance needs to bind a pack's target declaration to the governed
+    Makefile, not merely to a similarly named arbitrary command.  This parser
+    intentionally accepts the simple target grammar the contract permits and
+    never executes a Makefile while deciding whether that authority exists.
+    """
+
+    targets: set[str] = set()
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        if raw_line.startswith("\t"):
+            continue
+        match = _MAKE_RULE.match(raw_line.split("#", maxsplit=1)[0].strip())
+        if match:
+            targets.add(match.group("target"))
+    return targets
+
+
+def _is_governed_target_invocation(
+    target: TargetSpec, mechanism: str, make_executable: str, makefile_targets: set[str]
+) -> bool:
+    """Return whether a pack names the real governed target without shell indirection."""
+
+    return (
+        mechanism in makefile_targets
+        and target.target == mechanism
+        and target.command == (make_executable, mechanism)
+    )
+
+
 def _core_contract_gates() -> tuple[ZeroSkipAuditGate | MakefileAuthorityGate, ...]:
     """Return repository-wide invariant gates that every pack inherits."""
     return (ZeroSkipAuditGate(), MakefileAuthorityGate())
@@ -188,6 +219,7 @@ def check_pack(  # noqa: PLR0911, PLR0912, PLR0915 - each contract clause report
         )
     try:
         makefile_order = _makefile_prerequisites(makefile_path, _PRE_PR_TARGET)
+        makefile_targets = _makefile_targets(makefile_path)
     except OSError as exc:
         return GateResult.blocked(
             "conformance",
@@ -304,6 +336,28 @@ def check_pack(  # noqa: PLR0911, PLR0912, PLR0915 - each contract clause report
         else:
             target = targets.get(mechanism)
             gate = gates_by_clause.get(_invariant_identifier(mechanism))
+            if target is not None and not _is_governed_target_invocation(
+                target, mechanism, make_executable, makefile_targets
+            ):
+                findings.append(
+                    _invariant_evidence_finding(
+                        invariant,
+                        ProbeEvidence(
+                            probe="governed Makefile target binding",
+                            detected=False,
+                            outcome=(
+                                f"declared command={target.command!r}, "
+                                f"governed target={mechanism!r}"
+                            ),
+                            reason="",
+                        ),
+                        detail=(
+                            "declared command is not the configured Makefile executable "
+                            "invoking its real governed target"
+                        ),
+                    )
+                )
+                continue
             if target is not None and target.command[0].casefold() in no_op_commands:
                 findings.append(
                     _invariant_evidence_finding(

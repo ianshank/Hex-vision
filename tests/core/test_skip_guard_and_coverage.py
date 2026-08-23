@@ -316,6 +316,7 @@ def test_terminal_accounting_rejects_deselection(tmp_path: Path) -> None:
     assert "zero-skip terminal accounting failure: 1 deselected test(s) recorded" in output
 
 
+# Traceability: R-18 [Untested source file]
 def test_coverage_report_includes_unimported_source_file(tmp_path: Path) -> None:
     """Coverage's denominator includes source files that tests never import."""
     source = tmp_path / "source"

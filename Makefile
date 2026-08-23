@@ -89,8 +89,14 @@ types: ## Static types (config in pyproject.toml; strict mode, whole project)
 # `git` scans COMMITTED HISTORY (a secret added and later deleted still lives
 # in the objects).
 secrets: ## Secret scan of working tree AND history. Fails closed if gitleaks is absent.
+# The scanner is resolved to an absolute path whose digest is verified against the
+# pinned value first (R2-04): a version string a binary prints about itself is not
+# an identity. GITLEAKS_REPORT, when set, additionally emits machine-readable
+# findings, which is how the conformance probe proves INV-1 enforcement from a rule
+# id rather than from stdout prose (R2-03).
 	@tool_path="$$( $(SCANNER_IDENTITY) verify gitleaks)"; \
-	  "$$tool_path" dir $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
+	  "$$tool_path" dir $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner \
+	    $(if $(GITLEAKS_REPORT),--report-format json --report-path $(GITLEAKS_REPORT))
 	@tool_path="$$( $(SCANNER_IDENTITY) verify gitleaks)"; \
 	  "$$tool_path" git $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
 

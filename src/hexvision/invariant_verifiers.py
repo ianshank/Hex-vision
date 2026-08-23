@@ -145,6 +145,43 @@ def _run(
     return f"exit={completed.returncode}\n{completed.stdout}{completed.stderr}"
 
 
+def _result_payload(observed: str) -> dict[str, object] | None:
+    """Read the final JSON result emitted by a governed CLI target, never its prose."""
+
+    for line in reversed(observed.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            return candidate
+    return None
+
+
+def _secret_records(
+    path: Path, rule_id_field: str, location_fields: tuple[str, ...]
+) -> tuple[dict[str, object], ...] | None:
+    """Return scanner records only when every record has a rule id and location."""
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, list):
+        return None
+    records = tuple(record for record in payload if isinstance(record, dict))
+    if not records or len(records) != len(payload):
+        return None
+    if any(
+        not isinstance(record.get(rule_id_field), str)
+        or not record[rule_id_field]
+        or any(not record.get(field) for field in location_fields)
+        for record in records
+    ):
+        return None
+    return records
+
+
 def _target_probe_root(config: Config, files: tuple[Path, ...]) -> tempfile.TemporaryDirectory[str]:
     """Copy only policy files needed by a target probe, avoiding mutable checkout state."""
 
@@ -207,16 +244,28 @@ class _SecretScanVerifier:
                 generator.choice(alphabet) for _ in range(length)
             )
             (root / _PROBE_FILENAME).write_text(f"token = {secret}\n", encoding="utf-8")
+            report = root / str(settings["secret_report_path"])
             observed = _run(
                 target.command,
                 cwd=root,
-                environment={"PYTHONPATH": str(config.root / "src")},
+                # PYTHONPATH so the probe's child `make` can import this package to
+                # verify the scanner's digest; GITLEAKS_REPORT so the probe reads a
+                # rule id out of structured output instead of trusting prose.
+                environment={
+                    "PYTHONPATH": str(config.root / "src"),
+                    "GITLEAKS_REPORT": str(report),
+                },
+            )
+            records = _secret_records(
+                report,
+                str(settings["secret_report_rule_id_field"]),
+                tuple(str(field) for field in settings["secret_report_location_fields"]),
             )
         return ProbeEvidence(
             probe="synthetic working-tree credential",
-            detected="exit=0" not in observed,
+            detected="exit=0" not in observed and records is not None,
             outcome=observed,
-            reason=observed,
+            reason=json.dumps(records, sort_keys=True) if records is not None else "",
         )
 
 
@@ -264,11 +313,19 @@ class _RemoteVerifier:
                 if added
                 else "unable to prepare synthetic unapproved remote"
             )
+        payload = _result_payload(observed)
+        detected = (
+            added
+            and payload is not None
+            and payload.get("status") == "failed"
+            and isinstance(payload.get("findings"), list)
+            and bool(payload["findings"])
+        )
         return ProbeEvidence(
             probe="unapproved Git remote",
-            detected=added and "exit=0" not in observed,
+            detected=detected,
             outcome=observed,
-            reason=observed,
+            reason=json.dumps(payload, sort_keys=True) if payload is not None else "",
         )
 
 
@@ -297,6 +354,8 @@ class _HookInstallerVerifier:
         makefile = config.resolve_path("contract.makefile_path")
         installer = config.resolve_path("contract.conformance.hook_installer_path")
         hook_source = config.resolve_path("contract.conformance.hook_source_path")
+        governed_target = str(config.require("contract.conformance.hook_governed_target"))
+        make_executable = str(config.require("contract.make_executable"))
         git_executable = str(config.require("remotes.git_executable"))
         with _target_probe_root(config, (makefile, installer, hook_source)) as workspace:
             root = Path(workspace)
@@ -308,12 +367,30 @@ class _HookInstallerVerifier:
                 else "unable to prepare synthetic hookless repository"
             )
             hook = root / ".git" / "hooks" / "pre-push"
-            installed = hook.is_file() and hook_source.name in hook.read_text(encoding="utf-8")
+            content = hook.read_text(encoding="utf-8") if hook.is_file() else ""
+            installed = (
+                hook.is_file()
+                and os.access(hook, os.X_OK)
+                and f"{make_executable} -C" in content
+                and f" {governed_target}" in content
+            )
+            hook_evidence = (
+                json.dumps(
+                    {
+                        "hook": str(hook.relative_to(root)),
+                        "executable": os.access(hook, os.X_OK),
+                        "invokes": [make_executable, governed_target],
+                    },
+                    sort_keys=True,
+                )
+                if installed
+                else ""
+            )
         return ProbeEvidence(
             probe="missing pre-push hook",
             detected=initialized and installed and "exit=0" in observed,
             outcome=observed,
-            reason=observed,
+            reason=hook_evidence,
         )
 
 

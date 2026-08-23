@@ -212,7 +212,9 @@ def test_install_hooks_handles_git_worktree_dotgit_file(git_repo: Path) -> None:
     assert hook_path.returncode == 0
     installed = Path(hook_path.stdout.strip())
     assert installed.is_file()
-    assert "scripts/pre_push_scan.sh" in installed.read_text(encoding="utf-8")
+    content = installed.read_text(encoding="utf-8")
+    assert "make -C" in content
+    assert "remotes" in content
 
 
 def test_install_hooks_honors_relative_custom_hooks_path(git_repo: Path) -> None:
@@ -271,6 +273,17 @@ def test_install_hooks_preserves_unrelated_hook(git_repo: Path) -> None:
     assert result.returncode == 0
     assert "preserved unrelated pre-push hook" in result.stderr
     assert list(existing.parent.glob("pre-push.pre-hex-vision.*"))
+
+
+def test_install_hooks_recognizes_its_existing_governed_hook(git_repo: Path) -> None:
+    """Reinstalling the governed shim does not treat it as unrelated local work."""
+
+    first = run_process(["/bin/bash", "scripts/install_hooks.sh"], cwd=git_repo)
+    second = run_process(["/bin/bash", "scripts/install_hooks.sh"], cwd=git_repo)
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert "preserved unrelated pre-push hook" not in second.stderr
 
 
 def test_install_hooks_rejects_non_repository(tmp_path: Path) -> None:

@@ -58,8 +58,8 @@ def test_logging_defaults_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
     assert captured.out == ""
 
 
-# Traceability: R-1
-# Traceability: R-2
+# Traceability: R-1 [Later allowed layer wins with provenance, Malformed configured layer]
+# Traceability: R-2 [Frozen safety override, Authorized repository safety change]
 def test_config_frozen_refusal_provenance_and_accessors(tmp_path: Path) -> None:
     """Frozen policy cannot be weakened while ordinary values retain full provenance."""
     (tmp_path / "hex-vision.toml").write_text(

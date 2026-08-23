@@ -214,11 +214,12 @@ def test_settings_and_mcp_are_governed_and_do_not_store_secrets() -> None:
     assert "${HF_TOKEN}" in serialized
 
 
-def test_hook_installer_builds_shim_that_references_pre_push_scan() -> None:
-    """The suite executes installer coverage rather than trusting an uninstalled L2 hook."""
+def test_hook_installer_builds_shim_that_invokes_the_governed_remote_target() -> None:
+    """The installed L2 shim delegates to the governed target rather than parsing URLs."""
     text = (REPO_ROOT / "scripts" / "install_hooks.sh").read_text(encoding="utf-8")
     assert "git-path hooks" in text
-    assert "scripts/pre_push_scan.sh" in text
+    assert "make -C" in text
+    assert "remotes" in text
     assert "preserved unrelated pre-push hook" in text
 
 
