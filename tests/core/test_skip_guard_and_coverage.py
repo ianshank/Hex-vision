@@ -160,7 +160,7 @@ def test_shared_process_helper_removes_coverage_control_variables(
         ),
         (
             "authorized",
-            "2026-08-22 | DEC-1 | approved | reviewer\n",
+            "2026-08-22 | DEC-1 | approved | reviewer | - | active | -\n",
             (
                 "# @governance-skip: DEC-1 hardware unavailable\n"
                 "import pytest\n# @governance-skip: DEC-1 hardware unavailable\n"

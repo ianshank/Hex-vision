@@ -166,7 +166,7 @@ def test_zero_skip_gate_rejects_an_authorized_annotation(make_config, tmp_repo) 
     docs = root / "docs"
     docs.mkdir()
     (docs / "decision-log.md").write_text(
-        "2026-08-22 | DEC-1 | approved | reviewer\n", encoding="utf-8"
+        "2026-08-22 | DEC-1 | approved | reviewer | - | active | -\n", encoding="utf-8"
     )
     result = ZeroSkipAuditGate().check(make_config(root))
     assert result.status.value == "failed"
