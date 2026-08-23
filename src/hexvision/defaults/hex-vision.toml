@@ -10,12 +10,11 @@
 # because a quality bar an operator can lower from a shell is not a bar.
 
 [meta]
-config_version = "1.0"
-# Layers are applied in this order, later winning, and each resolved key records
-# which layer produced it so `hexvision config explain <key>` can answer
-# "why is this value what it is" without anyone reading code.
-layer_order = ["packaged", "repo", "pyproject", "env", "override"]
 env_prefix = "HEXVISION_"
+# Most tables are a closed contract: an overlay typo must fail rather than sit
+# inert. These are the two deliberate maps keyed by invariant ID, whose readers
+# consume every member dynamically and therefore may gain reviewed entries.
+extensible_tables = ["contract.invariants", "contract.invariant_enforcement"]
 
 [meta.frozen]
 # Frozen key prefixes: resolvable from `packaged`, `repo` and `pyproject` only.
@@ -33,13 +32,13 @@ prefixes = [
     "contract",
     "decision_log",
     "scanners",
+    "specification_validator",
 ]
 
 # --------------------------------------------------------------------------
 # The Gate Harness Contract this repository implements.
 # --------------------------------------------------------------------------
 [contract]
-version = "1.1"
 # Threshold flags in a pack command split quality policy across command lines
 # and pyproject. They are blocked so one frozen, reviewable source remains.
 forbidden_threshold_flags = ["--cov-fail-under", "--coverage.thresholds", "-Pcoverage.", "--fail-under"]
@@ -223,16 +222,39 @@ archive_kind = "binary"
 archive_member = "osv-scanner"
 
 # --------------------------------------------------------------------------
+# Strict OpenSpec validator provenance. `scripts/validate_specs.sh` never
+# accepts an environment-selected executable: it resolves this configured
+# executable to an absolute path and verifies its bytes before strict mode.
+# The packaged policy uses impossible all-zero pins because OpenSpec is optional;
+# without a reviewed repository pin the script reports structural Tier 2 only.
+# An adopting repository replaces its host's pin in a reviewed overlay to
+# activate strict validation.
+# --------------------------------------------------------------------------
+[specification_validator]
+executable = "openspec"
+version = "unconfigured"
+[specification_validator.platforms.linux.x86_64]
+artifact_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+[specification_validator.platforms.linux.aarch64]
+artifact_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+[specification_validator.platforms.linux.arm64]
+artifact_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+[specification_validator.platforms.darwin.x86_64]
+artifact_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+[specification_validator.platforms.darwin.arm64]
+artifact_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+# --------------------------------------------------------------------------
 # INV-3: destination allowlist. An empty allowlist is BLOCK, never ALLOW.
 # --------------------------------------------------------------------------
 [remotes]
 # Adding a destination is a governed decision requiring a decision-log entry.
 allowlist = ["github.com/ianshank/hex-vision", "huggingface.co"]
 # A bare username is not a credential: `ssh://git@github.com/org/repo` is the
-# most common SSH spelling and must be allowed. Only the `user:token@` form is a
-# finding, and it returns BLOCK rather than being normalized away, so the secret
-# gate still sees it.
-block_userinfo_with_password = true
+# most common SSH spelling and must be allowed. Password- or token-bearing
+# userinfo is an unconditional security invariant: it is always rejected rather
+# than normalized away, so the secret control still sees it. It is intentionally
+# not configurable because a false setting would silently permit credentials.
 # Hosts whose scheme-less shorthand (`github.com:org/repo`) is recognised. Not a
 # permission list — normalization only; the allowlist above still decides.
 known_hosts = ["github.com", "gitlab.com", "huggingface.co", "codeberg.org"]
@@ -299,9 +321,6 @@ tests_path = "tests"
 pytest_executable = "pytest"
 # Fixed status enum. A free-text status column is a column nobody can lint.
 statuses = ["Green", "Amber", "Red", "Inherited", "Waived"]
-# A Green row must cite a test node id that actually collects; an uncollectable
-# node id is the most common way a matrix drifts into fiction.
-require_test_node_for = ["Green"]
 # Release evidence is complete only when every source requirement has the
 # configured evidence status and at least one collecting test node.
 release_status = "Green"
@@ -315,13 +334,6 @@ require_inherits_from_for = ["Inherited"]
 require_decision_for = ["Waived"]
 decision_log_path = "docs/decision-log.md"
 decision_id_patterns = ["DEC-\\d+", "RB-\\d+[a-z]?", "G-[A-Z]+", "S\\d+\\.\\d+"]
-# Requirement references in executable tests use their own configured grammar;
-# decision identifiers cannot safely double as requirement identifiers.
-requirement_id_patterns = ["R-\\d+"]
-# Test source cites its requirement with this marker, while the matrix cites the
-# collecting node.  Requiring both directions prevents either projection from
-# drifting into an unreviewed assertion.
-test_citation_pattern = "Traceability:\\s*(R-\\d+)"
 # A marker belongs to the test node it immediately precedes. Plain markers
 # retain the established `# Traceability: R-N` spelling; optional bracketed
 # scenario tags bind a node to source-authoritative WHEN/THEN scenarios.
@@ -349,6 +361,10 @@ renderer = "jira_csv"
 # The report location is configurable because CI commonly writes artifacts
 # outside the checkout while local runs usually write beside pyproject.toml.
 report_path = "coverage.json"
+# Coverage bars are duplicated in the repository's `pyproject.toml` overlay so
+# the tool that emits the report and the gate that reads it share reviewed values.
+per_file_lines = 90
+per_file_branches = 80
 # A statement-free module has no executable behavior to cover. These package
 # markers are centrally reviewed exceptions with their reason rather than
 # implicit 100% coverage from a zero-statement denominator.
@@ -484,18 +500,19 @@ max_altitude_m = { exclusive_minimum = 0 }
 optional_gates = ["hil_smoke", "sitl_mission"]
 # When the runner is absent the result is `skipped-declared`, which the
 # conformance suite treats as a failure unless a decision-log entry names it.
-absence_requires_decision = true
+# Absence always requires that explicit decision; it is intentionally not a
+# toggle because an unreviewed missing physical-validation runner is not clean
+# evidence.
 runners = { hil_smoke = ["hexvision-hil-smoke"], sitl_mission = ["hexvision-sitl-mission"] }
 decision_log_path = "docs/decision-log.md"
 decision_id_pattern = "DEC-[0-9]+"
 timeout_seconds = 300
 
 
-# Pack target commands stay data so a different package manager or Make wrapper
-# is a reviewed config change rather than a fork of the Jetson integration.
+# Pack target commands stay data. Makefile launcher construction is deliberately
+# owned by the Makefile (`PM`/`RUN`); this pack does not claim an unused launcher
+# configuration surface.
 [packs.jetson]
-package_manager = "uv"
-runner = "run"
 [packs.jetson.targets]
 install = ["make", "install"]
 format = ["make", "format"]

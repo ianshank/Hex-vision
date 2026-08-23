@@ -94,13 +94,12 @@ def test_config_environment_types_and_section_validation(tmp_path: Path) -> None
     """Environment TOML values retain scalar types and invalid sections do not drift silently."""
     config = load_config(
         root=tmp_path,
-        env={"HEXVISION_SAMPLE__NUMBER": "7", "HEXVISION_SAMPLE__FLAG": "true"},
+        env={"HEXVISION_ROBOTICS__HARDWARE_IN_LOOP__TIMEOUT_SECONDS": "7"},
     )
-    assert config.get("sample.number") == 7
-    assert config.get("sample.flag") is True
-    scalar = load_config(root=tmp_path, overrides={"sample": "wrong"})
+    assert config.get("robotics.hardware_in_loop.timeout_seconds") == 7
+    scalar = load_config(root=tmp_path, overrides={"remotes": "wrong"})
     with pytest.raises(ConfigError):
-        scalar.section("sample")
+        scalar.section("remotes")
 
 
 @dataclass(frozen=True)

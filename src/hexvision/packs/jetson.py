@@ -69,8 +69,7 @@ class JetsonPack(Pack):
 
     def domain_gates(self, config: Config) -> Sequence[Gate]:
         """Return the five robotics controls that make this pack domain-specific."""
-        _ = config.require("packs.jetson.package_manager")
-        _ = config.require("packs.jetson.runner")
+        del config
         return (
             ModelCardGate(),
             LatencyBudgetGate(),
