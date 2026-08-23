@@ -40,8 +40,8 @@ def test_hardware_missing_with_decision_is_declared(tmp_path: Path) -> None:
     docs.mkdir()
     (docs / "decision-log.md").write_text(
         (
-            "2026-08-22 | DEC-1 | hil_smoke unavailable | reviewer\n"
-            "2026-08-22 | DEC-2 | sitl_mission unavailable | reviewer\n"
+            "2026-08-22 | DEC-1 | hil_smoke unavailable | reviewer | - | active | -\n"
+            "2026-08-22 | DEC-2 | sitl_mission unavailable | reviewer | - | active | -\n"
         ),
         encoding="utf-8",
     )
