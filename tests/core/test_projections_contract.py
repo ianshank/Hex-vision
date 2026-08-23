@@ -172,6 +172,25 @@ def test_zero_skip_gate_rejects_an_authorized_annotation(make_config, tmp_repo) 
     assert "authorized @governance-skip decision DEC-1" in result.findings[0].message
 
 
+def test_zero_skip_gate_rejects_importorskip_at_preflight(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """Static preflight calls out importorskip while terminal accounting remains authoritative."""
+    root = tmp_repo()
+    tests = root / "tests"
+    tests.mkdir()
+    (tests / "test_import.py").write_text(
+        "import pytest\npytest.importorskip('missing_dependency')\n", encoding="utf-8"
+    )
+    docs = root / "docs"
+    docs.mkdir()
+    (docs / "decision-log.md").write_text("DEC-1 approved\n", encoding="utf-8")
+    result = ZeroSkipAuditGate().check(make_config(root))
+    assert result.status.value == "failed"
+    assert result.summary == "test skips found"
+    assert (
+        "skip or xfail lacks a valid governance decision annotation" in result.findings[0].message
+    )
+
+
 def test_projections_block_unknown_renderer_and_malformed_data(
     make_config: Callable[[Path, dict[str, Any] | None], Config],
     tmp_repo: Callable[..., Path],

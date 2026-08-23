@@ -197,6 +197,125 @@ def test_runtime_skip_guard_resolves_test_local_decisions(
     assert reason in completed.stdout + completed.stderr
 
 
+def _run_zero_skip_child(
+    root: Path, source: str, arguments: list[str] | None = None
+) -> tuple[int, str]:
+    """Run a pytest child whose only zero-skip plugin is this repository's conftest."""
+    test_root = Path(__file__).parents[1]
+    shutil.copy(test_root / "conftest.py", root / "conftest.py")
+    support_root = root / "tests"
+    support_root.mkdir()
+    shutil.copy(test_root / "__init__.py", support_root / "__init__.py")
+    shutil.copytree(test_root / "support", support_root / "support")
+    (root / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+    (root / "test_terminal_accounting.py").write_text(source, encoding="utf-8")
+    command = [sys.executable, "-m", "pytest", "-q", *(arguments or [])]
+    completed = run_process(command, cwd=root)
+    return completed.returncode, completed.stdout + completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("source", "reason"),
+    [
+        (
+            'import pytest\npytest.importorskip("terminal_accounting_missing_dependency")\n',
+            "collection skip recorded",
+        ),
+        (
+            'import pytest\npytest.skip("collection stop", allow_module_level=True)\n',
+            "collection skip recorded",
+        ),
+        (
+            (
+                "import pytest\n"
+                '@pytest.mark.parametrize("value", [])\n'
+                "def test_empty(value):\n"
+                "    assert value\n"
+            ),
+            "runtime skip recorded",
+        ),
+        (
+            "import pytest\n\ndef test_runtime_skip():\n    pytest.skip('runtime stop')\n",
+            "runtime skip recorded",
+        ),
+        (
+            (
+                "import pytest\n"
+                "@pytest.mark.skipif(True, reason='conditional stop')\n"
+                "def test_conditional_skip():\n"
+                "    assert True\n"
+            ),
+            "runtime skip recorded",
+        ),
+        (
+            (
+                "import pytest\n"
+                "@pytest.mark.xfail(reason='expected stop')\n"
+                "def test_expected_failure():\n"
+                "    assert False\n"
+            ),
+            "XFAIL recorded",
+        ),
+        (
+            (
+                "import pytest\n"
+                "@pytest.mark.xfail(reason='unexpected success')\n"
+                "def test_unexpected_success():\n"
+                "    assert True\n"
+            ),
+            "XPASS recorded",
+        ),
+        (
+            (
+                "import pytest\n"
+                "def test_dynamic_skip_bypasses_static_ast_name_check():\n"
+                "    getattr(pytest, 'skip')('dynamic stop')\n"
+            ),
+            "runtime skip recorded",
+        ),
+    ],
+    ids=(
+        "importorskip-collection",
+        "module-skip-collection",
+        "empty-parametrize",
+        "runtime-skip",
+        "skipif",
+        "xfail",
+        "xpass",
+        "dynamic-ast-bypass",
+    ),
+)
+def test_terminal_accounting_rejects_every_skip_route(
+    tmp_path: Path, source: str, reason: str
+) -> None:
+    """Pytest reports reject collection and runtime routes, including an AST bypass."""
+    returncode, output = _run_zero_skip_child(tmp_path, source)
+    assert returncode == 1, output
+    assert f"zero-skip terminal accounting failure: {reason}" in output
+    if reason == "runtime skip recorded" and "parametrize" in source:
+        assert "collected 1 test(s) but executed 0 test body/bodies" in output
+
+
+def test_terminal_accounting_allows_a_clean_child_suite(tmp_path: Path) -> None:
+    """A clean child suite proves terminal enforcement is not a blanket failure."""
+    returncode, output = _run_zero_skip_child(
+        tmp_path, "def test_clean_execution():\n    assert True\n"
+    )
+    assert returncode == 0, output
+    assert "1 passed" in output
+
+
+def test_terminal_accounting_rejects_deselection(tmp_path: Path) -> None:
+    """Selection filters cannot omit a collected test without a terminal policy failure."""
+    returncode, output = _run_zero_skip_child(
+        tmp_path,
+        ("def test_run():\n    assert True\n\ndef test_omitted():\n    assert True\n"),
+        arguments=["-k", "run"],
+    )
+    assert returncode == 1, output
+    assert "zero-skip terminal accounting failure: 1 deselected test(s) recorded" in output
+
+
 def test_coverage_report_includes_unimported_source_file(tmp_path: Path) -> None:
     """Coverage's denominator includes source files that tests never import."""
     source = tmp_path / "source"

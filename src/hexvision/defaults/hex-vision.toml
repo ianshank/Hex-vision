@@ -23,7 +23,17 @@ env_prefix = "HEXVISION_"
 # silently-honoured override. Coverage floors are frozen for the reason the
 # contract states; safety envelopes are frozen because a flight-safety bound
 # changed from a shell leaves no reviewable diff.
-prefixes = ["coverage", "robotics.safety_envelope", "contract", "decision_log"]
+# `decision_log` is frozen because it is the grammar that decides what counts as a
+# recorded human authorization; a shell-supplied grammar could admit prose as
+# authority. `scanners` is frozen because it pins the digests that establish a
+# scanner's identity, and an overridable digest verifies nothing.
+prefixes = [
+    "coverage",
+    "robotics.safety_envelope",
+    "contract",
+    "decision_log",
+    "scanners",
+]
 
 # --------------------------------------------------------------------------
 # The Gate Harness Contract this repository implements.
@@ -93,6 +103,115 @@ probe_remote = "https://example.invalid/hexvision/conformance"
 hook_installer_path = "scripts/install_hooks.sh"
 hook_source_path = "scripts/pre_push_scan.sh"
 probe_package_manager = "true"
+
+# --------------------------------------------------------------------------
+# Scanner identity policy.  The Makefile asks scanner_identity for these
+# values; it deliberately contains neither a scanner version nor a digest.
+# `artifact_sha256` pins the runnable file, while `release_sha256` keeps the
+# backwards-compatible release installer pinned to its upstream download.
+# --------------------------------------------------------------------------
+[scanners.gitleaks]
+executable = "gitleaks"
+version = "8.28.0"
+go_module = "github.com/zricethezav/gitleaks/v8"
+
+[scanners.gitleaks.platforms.linux.x86_64]
+# artifact_sha256 was computed from /usr/local/bin/gitleaks in this R2 control
+# environment (gitleaks version 8.28.0) on 2026-08-22.  It is used for scans
+# because it pins the executable bytes actually invoked, not self-reported
+# version text. release_sha256 is the upstream published v8.28.0 Linux x64
+# tarball checksum, retained to verify `make secrets-install`.
+artifact_sha256 = "5fd1b3b0073269484d40078662e921d07427340ab9e6ed526ccd215a565b3298"
+asset = "gitleaks_8.28.0_linux_x64.tar.gz"
+download_url = "https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz"
+release_sha256 = "a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb"
+archive_kind = "tar.gz"
+archive_member = "gitleaks"
+
+[scanners.gitleaks.platforms.linux.aarch64]
+# artifact_sha256 was computed by extracting the corresponding upstream archive;
+# release_sha256 is its GitHub-published v8.28.0 checksum.
+artifact_sha256 = "3770c7ebeb625e3e96c183525ca18285a01aedef2d75a2c41ceb3e141af2e8b7"
+asset = "gitleaks_8.28.0_linux_arm64.tar.gz"
+download_url = "https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_arm64.tar.gz"
+release_sha256 = "eff65261156100e5d94a6b3dec313d532fddfe19ae1590bf7a2b4f2699128356"
+archive_kind = "tar.gz"
+archive_member = "gitleaks"
+
+[scanners.gitleaks.platforms.linux.arm64]
+artifact_sha256 = "3770c7ebeb625e3e96c183525ca18285a01aedef2d75a2c41ceb3e141af2e8b7"
+asset = "gitleaks_8.28.0_linux_arm64.tar.gz"
+download_url = "https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_arm64.tar.gz"
+release_sha256 = "eff65261156100e5d94a6b3dec313d532fddfe19ae1590bf7a2b4f2699128356"
+archive_kind = "tar.gz"
+archive_member = "gitleaks"
+
+[scanners.gitleaks.platforms.darwin.x86_64]
+artifact_sha256 = "cf09ad7a85683d90221db8324f036f23c8c29107145e1fc4a0dffbfa9e89c09a"
+asset = "gitleaks_8.28.0_darwin_x64.tar.gz"
+download_url = "https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_darwin_x64.tar.gz"
+release_sha256 = "edf5a507008b0d2ef4959575772772770586409c1f6f74dabf19cbe7ec341ced"
+archive_kind = "tar.gz"
+archive_member = "gitleaks"
+
+[scanners.gitleaks.platforms.darwin.arm64]
+artifact_sha256 = "5588b5d942dffa048720f7e6e1d274283219fb5722a2c7564d22e83ba39087d7"
+asset = "gitleaks_8.28.0_darwin_arm64.tar.gz"
+download_url = "https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_darwin_arm64.tar.gz"
+release_sha256 = "d942f3ad147250c9edbaab3fed9e482f98d3b59ba10ae97b8d75647e3ade492c"
+archive_kind = "tar.gz"
+archive_member = "gitleaks"
+
+[scanners.osv-scanner]
+executable = "osv-scanner"
+version = "2.2.4"
+go_module = "github.com/google/osv-scanner/v2/cmd/osv-scanner"
+
+[scanners.osv-scanner.platforms.linux.x86_64]
+# artifact_sha256 was computed from /usr/local/bin/osv-scanner in this R2
+# control environment (osv-scanner version 2.2.4) on 2026-08-22.  The upstream
+# published Linux amd64 release is a direct executable with the same digest, so
+# that digest also safely verifies `make audit-install`.
+artifact_sha256 = "7702cd1e5d9f5059dd9570f4ad967f27d3c5f5391b371ec937b384c238177f55"
+asset = "osv-scanner_linux_amd64"
+download_url = "https://github.com/google/osv-scanner/releases/download/v2.2.4/osv-scanner_linux_amd64"
+release_sha256 = "7702cd1e5d9f5059dd9570f4ad967f27d3c5f5391b371ec937b384c238177f55"
+archive_kind = "binary"
+archive_member = "osv-scanner"
+
+[scanners.osv-scanner.platforms.linux.aarch64]
+# These direct executable digests are the upstream published v2.2.4 release
+# checksums, so they pin both the installed artifact and its download.
+artifact_sha256 = "94d1c520b30a7e28b0189b2a1dd24c7b08f41887186e8ae3f811067ec9ed7043"
+asset = "osv-scanner_linux_arm64"
+download_url = "https://github.com/google/osv-scanner/releases/download/v2.2.4/osv-scanner_linux_arm64"
+release_sha256 = "94d1c520b30a7e28b0189b2a1dd24c7b08f41887186e8ae3f811067ec9ed7043"
+archive_kind = "binary"
+archive_member = "osv-scanner"
+
+[scanners.osv-scanner.platforms.linux.arm64]
+artifact_sha256 = "94d1c520b30a7e28b0189b2a1dd24c7b08f41887186e8ae3f811067ec9ed7043"
+asset = "osv-scanner_linux_arm64"
+download_url = "https://github.com/google/osv-scanner/releases/download/v2.2.4/osv-scanner_linux_arm64"
+release_sha256 = "94d1c520b30a7e28b0189b2a1dd24c7b08f41887186e8ae3f811067ec9ed7043"
+archive_kind = "binary"
+archive_member = "osv-scanner"
+
+[scanners.osv-scanner.platforms.darwin.x86_64]
+artifact_sha256 = "589e673d8d6585fecf4384fa4d85cb9fa5aa7f6ff6a8c4e5ef1472e8217d5875"
+asset = "osv-scanner_darwin_amd64"
+download_url = "https://github.com/google/osv-scanner/releases/download/v2.2.4/osv-scanner_darwin_amd64"
+release_sha256 = "589e673d8d6585fecf4384fa4d85cb9fa5aa7f6ff6a8c4e5ef1472e8217d5875"
+archive_kind = "binary"
+archive_member = "osv-scanner"
+
+[scanners.osv-scanner.platforms.darwin.arm64]
+artifact_sha256 = "bd964925a27037db3a0426ac411a6599cd18781bb2bd72ce02adf4a6a1fe9058"
+asset = "osv-scanner_darwin_arm64"
+download_url = "https://github.com/google/osv-scanner/releases/download/v2.2.4/osv-scanner_darwin_arm64"
+release_sha256 = "bd964925a27037db3a0426ac411a6599cd18781bb2bd72ce02adf4a6a1fe9058"
+archive_kind = "binary"
+archive_member = "osv-scanner"
 
 # --------------------------------------------------------------------------
 # INV-3: destination allowlist. An empty allowlist is BLOCK, never ALLOW.

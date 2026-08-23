@@ -207,7 +207,11 @@ class _SecretScanVerifier:
                 generator.choice(alphabet) for _ in range(length)
             )
             (root / _PROBE_FILENAME).write_text(f"token = {secret}\n", encoding="utf-8")
-            observed = _run(target.command, cwd=root)
+            observed = _run(
+                target.command,
+                cwd=root,
+                environment={"PYTHONPATH": str(config.root / "src")},
+            )
         return ProbeEvidence(
             probe="synthetic working-tree credential",
             detected="exit=0" not in observed,
