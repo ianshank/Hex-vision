@@ -34,6 +34,12 @@
 - [-] 5.2 Integrate CI, hooks, agent operating rules, and peer review for the non-commanding boundary and publication gate (R-16, R-17). **Deferred remediation:** the release-orchestration command must be wired into the configured chain and CI as specified in `docs/QUALITY-LOOPS.md`; `G-PUB` remains intentionally absent.
 - [x] 5.3 Final traceability update for R-16 and R-17; regenerate projections and run the integration gate suite. Evidence: traceability is Green with collected nodes and projections are regenerated below; publication remains blocked without G-PUB.
 
+## 6. Shared authority verification (DEC-016 corrective action, Order 0)
+- [x] 6.1 Widen the decision-log record schema to carry machine-readable subject and lifecycle fields, migrating every existing record with byte-preserved original cells and reconfirming DEC-013/DEC-014 via supersession (DEC-017–DEC-020). Evidence: merged PR #2; mechanical fidelity check recorded in its description.
+- [x] 6.2 Implement `hexvision.authority.verify_authority` returning a typed `VerifiedAuthority` no gate can construct, with exact-subject matching, active-status and supersession precedence, fail-closed supersedes-graph validation, and a conformance guard rejecting any second declaration or external construction site (R-20). Evidence: `tests/core/test_authority.py` and the R-20 conformance tests collect and pass.
+- [ ] 6.3 Migrate release aggregation and hardware-in-the-loop authority checks to the shared verifier, forwarding verified authority through `run_gate` structurally, with the PEER-REVIEW-3 forged-authority exploits reproduced as failing fixtures.
+- [ ] 6.4 Require a reviewed agent/skill definition manifest in agent validation, print authorized skips in human-readable release output, and add the authority-verification-authoring skill with structural cross-references.
+
 ## Deferred remediation register
 
 `[-]` means the historical baseline task has a known, scoped remediation that is not complete. It is not a hidden pass and it is not a generic “in progress” placeholder. The governing follow-up sequence, sizing, and exit evidence are in [`docs/NEXT-STEPS.md`](../../../docs/NEXT-STEPS.md):

@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added release orchestration that executes every registered domain gate for each configured active pack, exposed as `hexvision pack gates --all-active` and `make domain-gates`, closing the gap where domain gates existed but no local or CI path invoked them.
 - Added deterministic validation of governed agent and skill definitions, wired as `make agent-validation`, a step in the configured release order, and its own CI job so the local and CI gate sets cannot drift.
 - Added a test asserting which interface owns the four-state verdict, pinning GNU make's collapsing of every recipe failure into its own exit status and naming the CLI as the authority.
+- Added `hexvision.authority.verify_authority`, the one shared decision-log authority verifier mandated by DEC-016 (R-20): exact-subject matching against the configured subject column, active-status and append-only supersession precedence, fail-closed rejection of self/dangling/cyclic supersedes references, ambiguity denial, and a typed `VerifiedAuthority` value that cannot be constructed outside its module. Conformance now rejects a second `VerifiedAuthority` declaration or any external construction site (direct, aliased, attribute, or `object.__new__` form) as a Blocker, mirroring the single-normalizer contract. Existing authority consumers migrate to the verifier in the follow-on change.
 
 ### Changed
 

@@ -312,6 +312,15 @@ date_format = "%Y-%m-%d"
 required_columns = ["date", "id", "decision", "recorded-by", "status"]
 placeholder_values = ["", "-", "n/a", "tbd"]
 delimiter = "|"
+# The lifecycle columns and governed document location below are consumed by the
+# shared authority verifier (hexvision.authority, per DEC-016/DEC-018). They live
+# beside the grammar rather than inside DecisionLogSchema so an adopter schema
+# that never uses the verifier is not forced to declare lifecycle columns.
+path = "docs/decision-log.md"
+subject_column = "subject"
+status_column = "status"
+supersedes_column = "supersedes"
+active_status_value = "active"
 # Examples in code fences and HTML comments are documentation, never authority.
 fenced_code_markers = ["```", "~~~"]
 html_comment_delimiters = ["<!--", "-->"]
