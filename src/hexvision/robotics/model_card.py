@@ -17,6 +17,7 @@ from hexvision.config import Config
 from hexvision.gates.base import Gate
 from hexvision.gates.model import Finding, GateResult, Severity
 from hexvision.observability import get_logger
+from hexvision.robotics.filesystem import trusted_regular_file
 
 __all__ = ["ModelCard", "ModelCardGate", "load_model_cards", "parse_front_matter"]
 
@@ -137,6 +138,7 @@ def load_model_cards(config: Config) -> tuple[ModelCard, ...]:
     for path in paths:
         if not path.is_file():
             continue
+        trusted_regular_file(config.root, path, "model card")
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
@@ -267,7 +269,9 @@ class ModelCardGate(Gate):
             for pattern in patterns:
                 try:
                     artifacts.update(
-                        path for path in (config.root / root).glob(pattern) if path.is_file()
+                        trusted_regular_file(config.root, path, "model artifact")
+                        for path in (config.root / root).glob(pattern)
+                        if path.is_file()
                     )
                 except (OSError, ValueError) as exc:
                     raise ValueError(

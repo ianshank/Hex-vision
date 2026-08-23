@@ -18,6 +18,7 @@ def test_determinism_passes_with_identical_seeds(passing_repo: Any) -> None:
     root = passing_repo()
     result = DeterminismGate().check(load_config(root=root, env={}))
     assert result.status is GateStatus.PASSED
+    assert not result.findings
     assert result.measurements["spread"]["detector"] < 0.001
 
 
@@ -35,6 +36,7 @@ def test_determinism_blocks_different_seed_despite_matching_metric(
     root = passing_repo(runs=runs)
     result = DeterminismGate().check(load_config(root=root, env={}))
     assert result.status is GateStatus.FAILED
+    assert result.findings[0].id == f"DET-1-{seed.upper()}-DIFFERS"
     assert any(
         seed.upper() in item.id and item.severity is Severity.BLOCKER for item in result.findings
     )
@@ -119,6 +121,9 @@ def test_determinism_blocks_missing_record(passing_repo: Any) -> None:
     (root / "models/detector/eval-runs.json").unlink()
     result = DeterminismGate().check(load_config(root=root, env={}))
     assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "DETERMINISM-BLOCKED"
+    assert "no matching configured eval-run record" in result.findings[0].message
+    assert not result.measurements
 
 
 def test_determinism_blocks_duplicate_model_records(passing_repo: Any) -> None:
@@ -130,3 +135,6 @@ def test_determinism_blocks_duplicate_model_records(passing_repo: Any) -> None:
     (duplicate / "eval-runs.json").write_text(json.dumps(record), encoding="utf-8")
     result = DeterminismGate().check(load_config(root=root, env={}))
     assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "DETERMINISM-BLOCKED"
+    assert "multiple evaluation records" in result.findings[0].message
+    assert not result.measurements

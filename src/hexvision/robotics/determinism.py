@@ -18,6 +18,7 @@ from hexvision.config import Config
 from hexvision.gates.base import Gate
 from hexvision.gates.model import Finding, GateResult, Severity
 from hexvision.observability import get_logger
+from hexvision.robotics.filesystem import trusted_regular_file
 from hexvision.robotics.model_card import load_model_cards
 
 __all__ = ["DeterminismGate"]
@@ -135,12 +136,18 @@ class DeterminismGate(Gate):
         records: list[tuple[Path, Mapping[str, Any]]] = []
         for path in sorted(paths):
             try:
+                trusted_regular_file(config.root, path, "evaluation record")
                 if path.suffix == toml_suffix:
                     with path.open("rb") as handle:
                         document = tomllib.load(handle)
                 else:
                     document = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
+            except (
+                OSError,
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                tomllib.TOMLDecodeError,
+            ) as exc:
                 raise ValueError(f"cannot parse evaluation record {path}: {exc}") from exc
             if not isinstance(document, Mapping):
                 raise TypeError(f"evaluation record {path} must contain a top-level object")

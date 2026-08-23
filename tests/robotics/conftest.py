@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from hexvision.config import Config, load_config
+from tests.support.process import run_process
 
 
 @pytest.fixture
@@ -33,6 +34,7 @@ def passing_repo(tmp_path: Path) -> Callable[..., Path]:
     """Create a complete model, eval record and mission that meet default policy."""
 
     def make(**updates: Any) -> Path:
+        _initialise_git_repository(tmp_path)
         card = {
             "model_name": "detector",
             "version": "1.0.0",
@@ -96,3 +98,15 @@ def passing_repo(tmp_path: Path) -> Callable[..., Path]:
         return tmp_path
 
     return make
+
+
+def _initialise_git_repository(root: Path) -> None:
+    """Create a real repository with an empty reviewed baseline for each test."""
+    commands = (
+        ("git", "init", "--quiet"),
+        ("git", "config", "user.email", "robotics-tests@example.invalid"),
+        ("git", "config", "user.name", "robotics tests"),
+        ("git", "commit", "--allow-empty", "--quiet", "-m", "initial evidence baseline"),
+    )
+    for command in commands:
+        run_process(list(command), cwd=root).check_returncode()

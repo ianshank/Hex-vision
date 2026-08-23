@@ -25,7 +25,10 @@ def test_determinism_reads_toml_record(passing_repo: Any) -> None:
         "[[runs]]\nmetric_value = 0.9\npython_seed = 1\nnumpy_seed = 1\nframework_seed = 1\n",
         encoding="utf-8",
     )
-    assert DeterminismGate().check(load_config(root=root, env={})).status is GateStatus.PASSED
+    result = DeterminismGate().check(load_config(root=root, env={}))
+    assert result.status is GateStatus.PASSED
+    assert not result.findings
+    assert result.measurements["records"] == 1
 
 
 @pytest.mark.parametrize(
@@ -41,13 +44,21 @@ def test_determinism_blocks_invalid_policy(passing_repo: Any, overlay: str) -> N
     """Malformed policy prevents the check from claiming an evidence result."""
     root = passing_repo()
     (root / "hex-vision.toml").write_text(overlay, encoding="utf-8")
-    assert DeterminismGate().check(load_config(root=root, env={})).status is GateStatus.BLOCKED
+    result = DeterminismGate().check(load_config(root=root, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "DETERMINISM-BLOCKED"
+    assert "determinism" in result.findings[0].message
+    assert not result.measurements
 
 
 def test_determinism_blocks_record_without_name(passing_repo: Any) -> None:
     """A record cannot be associated with an artifact when its model name is absent."""
     root = passing_repo(record={"model_name": ""})
-    assert DeterminismGate().check(load_config(root=root, env={})).status is GateStatus.BLOCKED
+    result = DeterminismGate().check(load_config(root=root, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "DETERMINISM-BLOCKED"
+    assert "model-name field" in result.findings[0].message
+    assert not result.measurements
 
 
 @pytest.mark.parametrize(
@@ -61,9 +72,11 @@ def test_determinism_blocks_record_without_name(passing_repo: Any) -> None:
 def test_hardware_blocks_invalid_policy(tmp_path: Any, overlay: str) -> None:
     """Hardware absence policy must itself be structured and executable."""
     (tmp_path / "hex-vision.toml").write_text(overlay, encoding="utf-8")
-    assert (
-        HardwareInLoopGate().check(load_config(root=tmp_path, env={})).status is GateStatus.BLOCKED
-    )
+    result = HardwareInLoopGate().check(load_config(root=tmp_path, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "HARDWARE-IN-LOOP-BLOCKED"
+    assert result.findings[0].message
+    assert not result.measurements
 
 
 @pytest.mark.parametrize(
@@ -91,4 +104,8 @@ def test_safety_blocks_invalid_policy(passing_repo: Any, overlay: str) -> None:
     """Safety policy errors are fail-closed before a mission gets a verdict."""
     root = passing_repo()
     (root / "hex-vision.toml").write_text(overlay, encoding="utf-8")
-    assert SafetyEnvelopeGate().check(load_config(root=root, env={})).status is GateStatus.BLOCKED
+    result = SafetyEnvelopeGate().check(load_config(root=root, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "SAFETY-ENVELOPE-BLOCKED"
+    assert result.findings[0].message
+    assert not result.measurements

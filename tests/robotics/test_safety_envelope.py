@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -11,6 +12,7 @@ from hexvision.config import load_config
 from hexvision.errors import FrozenKeyOverrideError
 from hexvision.gates.model import GateStatus, Severity
 from hexvision.robotics.safety_envelope import SafetyEnvelopeGate
+from tests.robotics.boundaries import commit_file
 
 
 def _baseline_text(mission: dict[str, Any]) -> str:
@@ -20,11 +22,6 @@ def _baseline_text(mission: dict[str, Any]) -> str:
     return "\n".join(f"{key} = {json.dumps(value)}" for key, value in mission.items())
 
 
-def _baseline_run(text: str) -> Any:
-    """Return a git-like completed command result without relying on repository history."""
-    return subprocess.CompletedProcess(["git"], 0, stdout=text, stderr="")
-
-
 # Traceability: R-13 [Internally consistent mission, Missing or invalid bound]
 # Traceability: R-16 [Mission review, Hardware execution request]
 def test_safety_passes_valid_new_mission(passing_repo: Any) -> None:
@@ -32,7 +29,11 @@ def test_safety_passes_valid_new_mission(passing_repo: Any) -> None:
     root = passing_repo()
     result = SafetyEnvelopeGate().check(load_config(root=root, env={}))
     assert result.status is GateStatus.PASSED
-    assert result.measurements["baseline"]["missions/patrol.toml"].startswith("new-")
+    assert not result.findings
+    assert result.measurements["baseline"]["missions/patrol.toml"] == "baseline-absent-new-mission"
+    assert (
+        result.measurements["baseline_diagnostics"]["missions/patrol.toml"]["returncode"] == "128"
+    )
 
 
 @pytest.mark.parametrize(
@@ -88,8 +89,7 @@ def test_safety_enforces_configured_consistency_limits(
         ("failsafe_action", "terminate", "land", "terminate"),
     ],
 )
-def test_safety_widening_direction_is_per_bound(  # noqa: PLR0913 - direction cases are intentionally explicit.
-    monkeypatch: pytest.MonkeyPatch,
+def test_safety_widening_direction_is_per_bound(
     passing_repo: Any,
     bound: str,
     baseline_value: Any,
@@ -107,24 +107,26 @@ def test_safety_widening_direction_is_per_bound(  # noqa: PLR0913 - direction ca
         "failsafe_action": "rtl",
     }
     baseline[bound] = baseline_value
-    monkeypatch.setattr(
-        "hexvision.robotics.safety_envelope.subprocess.run",
-        lambda *_args, **_kwargs: _baseline_run(_baseline_text(baseline)),
+    commit_file(root, Path("missions/patrol.toml"), _baseline_text(baseline))
+    (root / "missions/patrol.toml").write_text(
+        _baseline_text({**baseline, bound: wider_value}), encoding="utf-8"
     )
     result = SafetyEnvelopeGate().check(load_config(root=root, env={}))
-    assert any(
-        "WIDENING" in item.id and item.severity is Severity.BLOCKER for item in result.findings
-    )
+    assert result.status is GateStatus.FAILED
+    assert result.findings[0].id == "SAFE-1-WIDENING"
+    assert result.findings[0].severity is Severity.BLOCKER
+    assert result.measurements["baseline"]["missions/patrol.toml"] == "baseline-read"
 
-    root = passing_repo(mission={bound: narrower_value})
+    (root / "missions/patrol.toml").write_text(
+        _baseline_text({**baseline, bound: narrower_value}), encoding="utf-8"
+    )
     result = SafetyEnvelopeGate().check(load_config(root=root, env={}))
+    assert result.status is GateStatus.PASSED
     assert not any("WIDENING" in item.id for item in result.findings)
 
 
 # Traceability: R-14 [Authorized widening, Unauthorised or unavailable comparison]
-def test_safety_widening_with_valid_decision_passes(
-    monkeypatch: pytest.MonkeyPatch, passing_repo: Any
-) -> None:
+def test_safety_widening_with_valid_decision_passes(passing_repo: Any) -> None:
     """A declared, present decision log entry authorises an otherwise permissive change."""
     root = passing_repo(mission={"max_altitude_m": 81, "safety_decision_id": "DEC-42"})
     docs = root / "docs"
@@ -140,25 +142,85 @@ def test_safety_widening_with_valid_decision_passes(
         "rtl_battery_percent": 30,
         "failsafe_action": "rtl",
     }
-    monkeypatch.setattr(
-        "hexvision.robotics.safety_envelope.subprocess.run",
-        lambda *_args, **_kwargs: _baseline_run(_baseline_text(baseline)),
+    commit_file(root, Path("missions/patrol.toml"), _baseline_text(baseline))
+    (root / "missions/patrol.toml").write_text(
+        _baseline_text({**baseline, "max_altitude_m": 81, "safety_decision_id": "DEC-42"}),
+        encoding="utf-8",
     )
     result = SafetyEnvelopeGate().check(load_config(root=root, env={}))
     assert result.status is GateStatus.PASSED
+    assert not result.findings
+    assert result.measurements["baseline"]["missions/patrol.toml"] == "baseline-read"
 
 
-def test_safety_records_invalid_baseline_as_new(
-    monkeypatch: pytest.MonkeyPatch, passing_repo: Any
-) -> None:
-    """Unavailable or corrupt history never silently claims a baseline comparison passed."""
+def test_safety_blocks_malformed_baseline_with_redacted_diagnostics(passing_repo: Any) -> None:
+    """Malformed committed baseline evidence blocks instead of being classified as a new mission."""
     root = passing_repo()
-    monkeypatch.setattr(
-        "hexvision.robotics.safety_envelope.subprocess.run",
-        lambda *_args, **_kwargs: _baseline_run("not toml"),
+    commit_file(root, Path("missions/patrol.toml"), "unclosed = [")
+    (root / "missions/patrol.toml").write_text(
+        "max_altitude_m = 80\nmax_horizontal_speed_ms = 8\nmax_tilt_deg = 25\n"
+        'geofence_radius_m = 250\nrtl_battery_percent = 30\nfailsafe_action = "rtl"\n',
+        encoding="utf-8",
     )
     result = SafetyEnvelopeGate().check(load_config(root=root, env={}))
-    assert result.measurements["baseline"]["missions/patrol.toml"] == "baseline-invalid"
+    assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "SAFE-1-BASELINE-MALFORMED"
+    assert "baseline malformed" in result.findings[0].message
+    assert result.measurements["baseline"]["missions/patrol.toml"] == "baseline-malformed"
+    assert result.findings[0].context["exception_class"] == "TOMLDecodeError"
+
+
+def test_safety_blocks_failed_baseline_command_and_redacts_stderr(passing_repo: Any) -> None:
+    """A real failed configured comparison command is infrastructure evidence, never a pass."""
+    root = passing_repo()
+    (root / "hex-vision.toml").write_text(
+        """
+[robotics.safety_envelope]
+baseline_command = ["git", "show", "MISSING:{path}"]
+""",
+        encoding="utf-8",
+    )
+    result = SafetyEnvelopeGate().check(load_config(root=root, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "SAFE-1-BASELINE-COMMAND-FAILED"
+    assert result.measurements["baseline"]["missions/patrol.toml"] == "baseline-command-failed"
+    assert result.findings[0].context["returncode"] == "128"
+
+
+def test_safety_new_mission_policy_can_require_reviewed_decision(passing_repo: Any) -> None:
+    """A reviewed configuration can require an explicit decision for absent baseline objects."""
+    root = passing_repo()
+    (root / "hex-vision.toml").write_text(
+        """
+[robotics.safety_envelope]
+new_mission_requires_decision = true
+""",
+        encoding="utf-8",
+    )
+    result = SafetyEnvelopeGate().check(load_config(root=root, env={}))
+    assert result.status is GateStatus.FAILED
+    assert result.findings[0].id == "SAFE-1-NEW-MISSION-DECISION"
+    assert "new mission" in result.findings[0].message
+    assert result.measurements["baseline"]["missions/patrol.toml"] == "baseline-absent-new-mission"
+
+
+def test_safety_timeout_is_blocked_with_secret_redacted_diagnostics(
+    monkeypatch: pytest.MonkeyPatch, passing_repo: Any
+) -> None:
+    """A timeout is the only mocked process condition and its diagnostic stays bounded."""
+    root = passing_repo()
+    secret = "token=super-secret-value"  # noqa: S105 - redaction test fixture.
+
+    def timed_out(*_args: Any, **_kwargs: Any) -> Any:
+        raise subprocess.TimeoutExpired(["git"], 1, stderr=secret)
+
+    monkeypatch.setattr("hexvision.robotics.safety_envelope.subprocess.run", timed_out)
+    result = SafetyEnvelopeGate().check(load_config(root=root, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "SAFE-1-BASELINE-TIMEOUT"
+    assert result.measurements["baseline"]["missions/patrol.toml"] == "baseline-timeout"
+    assert secret not in result.findings[0].context["stderr"]
+    assert "[REDACTED]" in result.findings[0].context["stderr"]
 
 
 def test_safety_prefix_is_frozen(passing_repo: Any) -> None:

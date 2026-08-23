@@ -17,6 +17,7 @@ def test_model_card_passes_for_complete_card(passing_repo: Any) -> None:
     root = passing_repo()
     result = ModelCardGate().check(load_config(root=root, env={}))
     assert result.status is GateStatus.PASSED
+    assert not result.findings
     assert result.measurements == {"cards": 1, "artifacts": 1}
 
 
@@ -49,7 +50,10 @@ def test_model_card_required_fields_are_individually_enforced(
     result = ModelCardGate().check(load_config(root=root, env={}))
     finding = next(item for item in result.findings if field.upper() in item.id)
     assert result.status is GateStatus.FAILED
+    assert finding.id == f"MC-1-{field.upper()}"
+    assert "absent or empty" in finding.message
     assert finding.severity is severity
+    assert result.measurements == {"cards": 1, "artifacts": 1}
 
 
 @pytest.mark.parametrize(
@@ -121,6 +125,9 @@ def test_model_card_blocks_invalid_document(passing_repo: Any) -> None:
     (root / "models/detector/model-card.md").write_text("not front matter", encoding="utf-8")
     result = ModelCardGate().check(load_config(root=root, env={}))
     assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "MODEL-CARD-BLOCKED"
+    assert "cannot parse model card" in result.findings[0].message
+    assert not result.measurements
 
 
 def test_model_card_checks_each_configured_artifact_root(passing_repo: Any) -> None:
@@ -144,4 +151,8 @@ def test_model_card_blocks_malformed_retargeting_policy(passing_repo: Any, overl
     """An external field mapping must be complete before card evidence is assessed."""
     root = passing_repo()
     (root / "hex-vision.toml").write_text(overlay, encoding="utf-8")
-    assert ModelCardGate().check(load_config(root=root, env={})).status is GateStatus.BLOCKED
+    result = ModelCardGate().check(load_config(root=root, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "MODEL-CARD-BLOCKED"
+    assert "non-empty" in result.findings[0].message
+    assert not result.measurements

@@ -468,6 +468,15 @@ decision_log_path = "docs/decision-log.md"
 decision_id_pattern = "DEC-[0-9]+"
 baseline_command = ["git", "show", "HEAD:{path}"]
 git_timeout_seconds = 5
+# A baseline can be absent only when the configured command reports the
+# configured, path-specific message. Any other non-zero command result blocks;
+# it might be a detached checkout, a bad runner, or an unavailable repository.
+new_mission_returncodes = [128]
+new_mission_stderr_pattern = "^fatal: path '.+' exists on disk, but not in 'HEAD'$"
+# New mission evidence has no historical comparator. This reviewed default
+# permits a new mission; adopters can require a recorded decision in a frozen
+# repository policy without mistaking a broken comparison runner for new work.
+new_mission_requires_decision = false
 # Per-bound directions prevent the RTL battery threshold from being treated as larger-is-wider.
 permissive_directions = { max_altitude_m = "higher", max_horizontal_speed_ms = "higher", max_tilt_deg = "higher", geofence_radius_m = "higher", rtl_battery_percent = "lower", failsafe_action = "weaker" }
 failsafe_strength = ["terminate", "land", "rtl", "hold"]
@@ -476,6 +485,18 @@ rtl_battery_percent = { minimum = 0, maximum = 100 }
 max_tilt_deg = { minimum = 0, maximum = 90 }
 geofence_radius_m = { exclusive_minimum = 0 }
 max_altitude_m = { exclusive_minimum = 0 }
+
+[robotics.diagnostics]
+# Error excerpts are evidence, not an unbounded logging channel. Keep them
+# useful to field operators while never serialising a likely credential.
+stderr_excerpt_max_chars = 512
+secret_patterns = [
+  "(?i)(?:password|token|secret|api[_-]?key)\\s*[=:]\\s*[^\\s]+",
+  "\\bgh[pousr]_[A-Za-z0-9_]+\\b",
+]
+redaction = "[REDACTED]"
+command_encoding = "utf-8"
+command_decode_errors = "replace"
 
 [robotics.hardware_in_loop]
 # A pack may declare that some gates only run where hardware exists. Those gates

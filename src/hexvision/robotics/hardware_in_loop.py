@@ -16,8 +16,10 @@ from typing import Any, Final
 from hexvision.config import Config
 from hexvision.decision_log import load_decision_log_schema, read_decision_log
 from hexvision.gates.base import Gate
-from hexvision.gates.model import Finding, GateResult, Severity
-from hexvision.observability import get_logger
+from hexvision.gates.model import Finding, GateResult, GateStatus, Severity
+from hexvision.observability import get_logger, log_verdict
+from hexvision.robotics.diagnostics import command_identity, diagnostic_policy, redacted_excerpt
+from hexvision.robotics.filesystem import trusted_regular_file
 
 __all__ = ["HardwareInLoopGate"]
 
@@ -41,29 +43,56 @@ class HardwareInLoopGate(Gate):
         """Probe commands by executable presence, run present ones, and aggregate their evidence."""
         try:
             policy = _policy(config, self.clause)
+            diagnostics_policy = diagnostic_policy(config, self.clause)
         except (TypeError, ValueError) as exc:
-            return GateResult.blocked(
-                self.name,
-                summary="hardware-in-loop policy is not usable",
-                reason=str(exc),
-                clause=self.clause,
+            return self._finish(
+                GateResult.blocked(
+                    self.name,
+                    summary="hardware-in-loop policy is not usable",
+                    reason=str(exc),
+                    clause=self.clause,
+                ),
+                "policy-blocked",
             )
         findings: list[Finding] = []
         missing: dict[str, str | None] = {}
         executed: dict[str, int] = {}
+        runner_diagnostics: dict[str, Mapping[str, str]] = {}
+        _LOG.info(
+            "hardware runner assessment started",
+            extra={
+                "gate": self.name,
+                "clause": self.clause,
+                "runners": len(policy["optional_gates"]),
+            },
+        )
         for gate_name in policy["optional_gates"]:
             command = policy["runners"].get(gate_name)
             if not isinstance(command, list) or not command or not isinstance(command[0], str):
-                return GateResult.blocked(
-                    self.name,
-                    summary="hardware-in-loop runner is not configured",
-                    reason=f"optional gate {gate_name!r} has no configured command",
-                    clause=self.clause,
+                return self._finish(
+                    GateResult.blocked(
+                        self.name,
+                        summary="hardware-in-loop runner is not configured",
+                        reason=f"optional gate {gate_name!r} has no configured command",
+                        clause=self.clause,
+                    ),
+                    "runner-not-configured",
                 )
             runner = command[0]
             if shutil.which(runner) is None:
                 missing[gate_name] = _authorising_decision(config, policy, gate_name)
+                _LOG.warning(
+                    "configured hardware runner is absent",
+                    extra={
+                        "gate": self.name,
+                        "clause": self.clause,
+                        "runner": gate_name,
+                        "command": command_identity(command, diagnostics_policy),
+                        "decision_id": missing[gate_name],
+                    },
+                )
                 continue
+            command_name = command_identity(command, diagnostics_policy)
             try:
                 completed = subprocess.run(
                     command,
@@ -71,17 +100,57 @@ class HardwareInLoopGate(Gate):
                     check=False,
                     capture_output=True,
                     text=True,
+                    encoding=diagnostics_policy["encoding"],
+                    errors=diagnostics_policy["decode_errors"],
                     timeout=policy["timeout_seconds"],
                 )
             except (OSError, subprocess.TimeoutExpired) as exc:
-                return GateResult.blocked(
-                    self.name,
-                    summary="hardware-in-loop runner could not execute",
-                    reason=f"runner for {gate_name!r} could not execute: {exc}",
-                    clause=self.clause,
+                runner_diagnostics[gate_name] = {
+                    "command": command_name,
+                    "exception_class": type(exc).__name__,
+                    "stderr": redacted_excerpt(
+                        getattr(exc, "stderr", None) or str(exc), diagnostics_policy
+                    ),
+                }
+                _LOG.error(
+                    "hardware runner could not execute",
+                    extra={
+                        "gate": self.name,
+                        "clause": self.clause,
+                        "runner": gate_name,
+                        **runner_diagnostics[gate_name],
+                    },
+                )
+                return self._finish(
+                    _execution_blocked_result(
+                        self.name,
+                        self.clause,
+                        gate_name,
+                        runner_diagnostics[gate_name],
+                        {
+                            "executed": executed,
+                            "missing": missing,
+                            "diagnostics": runner_diagnostics,
+                        },
+                    ),
+                    "runner-execution-unavailable",
                 )
             executed[gate_name] = completed.returncode
+            runner_diagnostics[gate_name] = {
+                "command": command_name,
+                "returncode": str(completed.returncode),
+                "stderr": redacted_excerpt(completed.stderr, diagnostics_policy),
+            }
             if completed.returncode != 0:
+                _LOG.error(
+                    "hardware runner returned non-zero status",
+                    extra={
+                        "gate": self.name,
+                        "clause": self.clause,
+                        "runner": gate_name,
+                        **runner_diagnostics[gate_name],
+                    },
+                )
                 findings.append(
                     Finding(
                         id=f"HIL-{gate_name.upper()}-FAILED",
@@ -94,9 +163,14 @@ class HardwareInLoopGate(Gate):
                         disposition=(
                             "Restore the hardware scenario and re-run its configured command."
                         ),
+                        context=runner_diagnostics[gate_name],
                     )
                 )
-        measurements: dict[str, Any] = {"executed": executed, "missing": missing}
+        measurements: dict[str, Any] = {
+            "executed": executed,
+            "missing": missing,
+            "diagnostics": runner_diagnostics,
+        }
         _LOG.info(
             "hardware runners assessed", extra={"executed": len(executed), "missing": len(missing)}
         )
@@ -111,28 +185,49 @@ class HardwareInLoopGate(Gate):
                 clause=self.clause,
             )
             combined_findings = (*base.findings, *findings)
-            return GateResult(
-                gate=base.gate,
-                status=base.status,
-                clause=base.clause,
-                summary=base.summary,
-                findings=GateResult._sorted(combined_findings),
-                measurements={**dict(base.measurements), **measurements},
+            return self._finish(
+                GateResult(
+                    gate=base.gate,
+                    status=base.status,
+                    clause=base.clause,
+                    summary=base.summary,
+                    findings=GateResult._sorted(combined_findings),
+                    measurements={**dict(base.measurements), **measurements},
+                ),
+                "declared-runner-absence",
             )
         if findings:
-            return GateResult.failed(
+            return self._finish(
+                GateResult.failed(
+                    self.name,
+                    summary="a configured hardware-in-loop runner failed",
+                    findings=findings,
+                    clause=self.clause,
+                    measurements=measurements,
+                ),
+                "runner-failed",
+            )
+        return self._finish(
+            GateResult.passed(
                 self.name,
-                summary="a configured hardware-in-loop runner failed",
-                findings=findings,
+                summary="all configured hardware-in-loop runners completed successfully",
                 clause=self.clause,
                 measurements=measurements,
-            )
-        return GateResult.passed(
-            self.name,
-            summary="all configured hardware-in-loop runners completed successfully",
-            clause=self.clause,
-            measurements=measurements,
+            ),
+            "all-runners-completed",
         )
+
+    def _finish(self, result: GateResult, decision: str) -> GateResult:
+        """Log every terminal hardware-gate decision."""
+        log_verdict(
+            _LOG,
+            gate=self.name,
+            status=result.status.value,
+            clause=self.clause,
+            decision=decision,
+            findings=len(result.findings),
+        )
+        return result
 
 
 def _policy(config: Config, clause: str) -> dict[str, Any]:
@@ -158,13 +253,41 @@ def _policy(config: Config, clause: str) -> dict[str, Any]:
     return policy
 
 
+def _execution_blocked_result(
+    gate: str,
+    clause: str,
+    runner: str,
+    diagnostic: Mapping[str, str],
+    measurements: Mapping[str, Any],
+) -> GateResult:
+    """Return a named blocked finding when a configured runner cannot start."""
+    return GateResult(
+        gate=gate,
+        status=GateStatus.BLOCKED,
+        clause=clause,
+        summary="hardware-in-loop runner could not execute",
+        findings=(
+            Finding(
+                id=f"HIL-{runner.upper()}-UNAVAILABLE",
+                severity=Severity.BLOCKER,
+                message=f"runner for {runner!r} could not execute",
+                clause=clause,
+                disposition="Restore the runner environment and re-run its configured command.",
+                context=dict(diagnostic),
+            ),
+        ),
+        measurements=dict(measurements),
+    )
+
+
 def _authorising_decision(config: Config, policy: Mapping[str, Any], gate_name: str) -> str | None:
     """Find a valid record that explicitly names the absent gate and configured ID."""
     path = config.root / str(policy["decision_log_path"])
     try:
+        trusted_regular_file(config.root, path, "hardware absence decision log")
         schema = load_decision_log_schema(config)
         records = read_decision_log(path, schema).records
-    except OSError:
+    except (OSError, ValueError):
         return None
     pattern = re.compile(str(policy["decision_id_pattern"]))
     for record in records:

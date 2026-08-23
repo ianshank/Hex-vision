@@ -17,6 +17,7 @@ def test_latency_pass_and_headroom(passing_repo: Any) -> None:
     root = passing_repo()
     result = LatencyBudgetGate().check(load_config(root=root, env={}))
     assert result.status is GateStatus.PASSED
+    assert not result.findings
     assert result.measurements["headroom"]["models/detector/model-card.md"] == 3.0
 
 
@@ -35,6 +36,8 @@ def test_latency_budget_boundary(
         assert any(
             finding in item.id and item.severity is Severity.MAJOR for item in result.findings
         )
+    else:
+        assert not result.findings
     assert result.measurements["headroom"]["models/detector/model-card.md"] == 33.0 - measured
 
 
@@ -64,3 +67,6 @@ def test_latency_blocks_unreadable_model_card(passing_repo: Any) -> None:
     (root / "models/detector/model-card.md").write_text("bad", encoding="utf-8")
     result = LatencyBudgetGate().check(load_config(root=root, env={}))
     assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].id == "LATENCY-BUDGET-BLOCKED"
+    assert "cannot parse model card" in result.findings[0].message
+    assert not result.measurements

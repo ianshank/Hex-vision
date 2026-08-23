@@ -112,9 +112,18 @@ def test_external_pack_with_renamed_fields_passes_all_evidence_gates(
     """Configuration alone retargets card, latency, and determinism semantics."""
     root = external_pack_root()
     config = load_config(root=root, env={})
-    assert ModelCardGate().check(config).status is GateStatus.PASSED
-    assert LatencyBudgetGate().check(config).status is GateStatus.PASSED
-    assert DeterminismGate().check(config).status is GateStatus.PASSED
+    model_result = ModelCardGate().check(config)
+    latency_result = LatencyBudgetGate().check(config)
+    determinism_result = DeterminismGate().check(config)
+    assert model_result.status is GateStatus.PASSED
+    assert not model_result.findings
+    assert model_result.measurements == {"cards": 1, "artifacts": 1}
+    assert latency_result.status is GateStatus.PASSED
+    assert not latency_result.findings
+    assert latency_result.measurements["models"] == 1
+    assert determinism_result.status is GateStatus.PASSED
+    assert not determinism_result.findings
+    assert determinism_result.measurements["records"] == 1
 
 
 def test_external_pack_renamed_fields_keep_specific_block_reasons(
