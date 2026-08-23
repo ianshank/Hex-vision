@@ -179,7 +179,7 @@ def _absent_authorization_reason(
         )
     return (
         f"required publication authorization gate {authorization_id!r} has no valid decision-log "
-        f"entry in {decision_log_path}: line {rejection.line_number} {rejection.reason}"
+        f"entry in {decision_log_path} (line {rejection.line_number}): {rejection.reason}"
     )
 
 

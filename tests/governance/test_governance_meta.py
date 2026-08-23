@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from tests.conftest import assert_subject_under_test_is_this_checkout
 from tests.governance.conftest import run_process
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -356,3 +357,32 @@ def test_make_secrets_passes_with_the_verified_installed_scanner() -> None:
     """The configured genuine gitleaks artifact remains usable after identity verification."""
     result = run_process(["make", "secrets"], cwd=REPO_ROOT)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_checkout_guard_allows_this_checkout() -> None:
+    """The guard must not fire for the checkout that owns the imported package."""
+    assert_subject_under_test_is_this_checkout(Path(__file__).parents[2])
+
+
+def test_checkout_guard_ignores_a_root_without_package_source(tmp_path: Path) -> None:
+    """Synthetic child roots have no src/hexvision and must remain runnable."""
+    assert_subject_under_test_is_this_checkout(tmp_path)
+
+
+def test_checkout_guard_rejects_a_foreign_checkout(tmp_path: Path) -> None:
+    """A second checkout sharing this environment is refused, not silently trusted.
+
+    This reproduces a false green observed during development: a sibling clone reused
+    this virtual environment, the editable install was repointed at the clone, and the
+    whole suite passed against code that was not the code under test.
+    """
+    foreign = tmp_path / "sibling-checkout"
+    (foreign / "src" / "hexvision").mkdir(parents=True)
+    (foreign / "src" / "hexvision" / "__init__.py").write_text("", encoding="utf-8")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        assert_subject_under_test_is_this_checkout(foreign)
+
+    message = str(excinfo.value)
+    assert "does not belong to the checkout under test" in message
+    assert str(foreign.resolve()) in message

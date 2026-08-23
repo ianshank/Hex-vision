@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+import hexvision
 from hexvision.config import Config, load_config
 from hexvision.decision_log import decision_ids
 from tests.support.process import coverage_controls_sanitized, run_process
@@ -106,10 +107,49 @@ def _runtime_violation_reason(report: pytest.TestReport, audit: ZeroSkipSessionA
     )
 
 
+def assert_subject_under_test_is_this_checkout(rootdir: Path) -> None:
+    """Fail the session unless the imported package is this checkout's own source.
+
+    The Makefile drives pytest through a virtual environment holding an *editable*
+    install, which is a path pointer rather than a copy. If a second checkout of this
+    repository — a worktree, a clone, or a reviewer's throwaway copy — is used with the
+    same environment, that pointer can be repointed at the other tree. The suite then
+    passes while testing code that is not the code under review, which is a false green
+    of the worst kind: every gate reports success and none of them looked at this diff.
+
+    This was observed in practice, so it is enforced rather than documented.
+
+    The check applies only when ``rootdir`` actually contains this package's source. The
+    suite's own governance tests copy this file into temporary directories and run child
+    pytest sessions there to prove behaviour end to end; those roots legitimately have no
+    ``src/hexvision`` of their own and must go on importing the installed package.
+
+    Args:
+        rootdir: The pytest root directory, taken as the checkout being tested.
+
+    Raises:
+        RuntimeError: If the imported ``hexvision`` package resolves outside
+            ``rootdir``. Raised at configure time so the session cannot report a
+            result at all, rather than reporting a passing one.
+    """
+    checkout = rootdir.resolve()
+    if not (checkout / "src" / "hexvision" / "__init__.py").is_file():
+        return
+    package_root = Path(hexvision.__file__).resolve().parent
+    if checkout not in package_root.parents:
+        raise RuntimeError(
+            "the imported hexvision package does not belong to the checkout under test: "
+            f"package resolves to {package_root}, but the tests are rooted at {checkout}. "
+            "A shared virtual environment's editable install has been repointed at "
+            "another checkout, so this run would report on code it is not testing. "
+            "Reinstall the package from this checkout before running the suite."
+        )
+
+
 @pytest.hookimpl
 def pytest_configure(config: pytest.Config) -> None:
     """Install session-scoped accounting before collection can skip a module."""
-    del config
+    assert_subject_under_test_is_this_checkout(Path(str(config.rootpath)))
     _SESSION_AUDIT_HOLDER["audit"] = ZeroSkipSessionAudit()
 
 

@@ -33,8 +33,8 @@ def test_publication_blocks_without_g_pub_authorization(tmp_repo: Any) -> None:
     assert result.status is GateStatus.BLOCKED
     assert result.findings[0].message == (
         "required publication authorization gate 'G-PUB' has no valid decision-log entry "
-        "in docs/decision-log.md: line 1 required cell 'decision' is blank or a configured "
-        "placeholder"
+        "in docs/decision-log.md (line 1): required cell 'decision' is blank or a "
+        "configured placeholder"
     )
 
 
@@ -175,7 +175,7 @@ def test_publication_rejects_invalid_g_pub_pseudo_records(
         if reason is None
         else (
             "required publication authorization gate 'G-PUB' has no valid decision-log entry "
-            f"in docs/decision-log.md: line {line_number} {reason}"
+            f"in docs/decision-log.md (line {line_number}): {reason}"
         )
     )
     assert result.findings[0].message == expected
