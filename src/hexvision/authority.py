@@ -129,8 +129,9 @@ def verify_authority(  # noqa: PLR0911 - each denial reason reports independentl
         ValueError: If ``subject`` is blank or a configured placeholder (a
             caller error, not a ledger verdict), or the lifecycle columns are
             not part of the configured schema.
-        OSError: If the configured ledger cannot be read. Callers must surface
-            this as BLOCKED, not as a denial.
+        OSError: If the configured ledger cannot be read, including a ledger
+            that is not valid UTF-8. Callers must surface this as BLOCKED, not
+            as a denial.
     """
     schema = load_decision_log_schema(config, clause=clause)
     subject_column = _lifecycle_column(
@@ -159,7 +160,13 @@ def verify_authority(  # noqa: PLR0911 - each denial reason reports independentl
             f"authority subject must be a non-empty, non-placeholder string; got {subject!r}"
         )
     path = config.resolve_path("decision_log.path", clause=clause)
-    records = read_decision_log(path, schema).records
+    try:
+        records = read_decision_log(path, schema).records
+    except UnicodeDecodeError as exc:
+        # Keep the documented raise contract exact: an undecodable ledger is the
+        # same "could not look" condition as an unreadable one, so callers can
+        # catch OSError alone and still surface every evidence failure as BLOCKED.
+        raise OSError(f"decision log at {path} is not valid UTF-8: {exc}") from exc
     graph_problem = _supersedes_graph_problem(records, schema, supersedes_column)
     if graph_problem is not None:
         _LOG.error(
