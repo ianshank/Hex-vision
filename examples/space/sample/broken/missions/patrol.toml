@@ -1,0 +1,6 @@
+max_altitude_m = -1
+max_horizontal_speed_ms = 8
+max_tilt_deg = 91
+geofence_radius_m = 0
+rtl_battery_percent = 101
+failsafe_action = "unsafe"
