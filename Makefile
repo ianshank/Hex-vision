@@ -52,6 +52,13 @@ test: ## Run the suite (zero skipped, mechanically enforced by the conftest guar
 	$(RUN) pytest
 
 cov: ## Run the suite against the coverage floors in pyproject.toml
+# Erase first, always. A coverage gate that inherits whatever data files happen
+# to be lying in the working tree is not a measurement, it is a coincidence.
+# Stale parallel data (from an interrupted run, a different branch, or a
+# subprocess that recorded statement-only data because it started in a temp
+# directory and could not see this config) either crashes the combine step or,
+# far worse, silently credits the current tree with coverage it never earned.
+	$(RUN) coverage erase
 	$(RUN) pytest --cov --cov-report=term-missing --cov-report=json:$(ROOT)/coverage.json
 	$(RUN) python -m $(PKG).cli gate coverage --report $(ROOT)/coverage.json
 # NOTE: deliberately no --cov-fail-under flag here. The project floor lives ONLY

@@ -12,6 +12,7 @@ from hexvision.packs import registry
 from hexvision.packs.base import Pack, PackMeta, TargetSpec
 from hexvision.packs.registry import available, clear_registered, load, load_all, register
 from hexvision.remotes import check_remotes, normalize_remote_url
+from tests.support.process import coverage_controls_sanitized, run_process
 
 
 @pytest.mark.parametrize(
@@ -152,19 +153,16 @@ def test_scp_credentials_are_blocked() -> None:
 def test_actual_remote_and_pushurl_are_enumerated(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """An off-allowlist pushurl fails even when the fetch URL is approved."""
     root = tmp_repo("[remotes]\nallowlist=['github.com/org/repo']\n")
-    import subprocess
-
-    subprocess.run(
+    run_process(
         ["/usr/bin/git", "remote", "add", "origin", "https://github.com/org/repo.git"],
         cwd=root,
-        check=True,
-    )
-    subprocess.run(
+    ).check_returncode()
+    run_process(
         ["/usr/bin/git", "remote", "set-url", "--push", "origin", "https://evil.example/x/y.git"],
         cwd=root,
-        check=True,
-    )
-    result = check_remotes(make_config(root))
+    ).check_returncode()
+    with coverage_controls_sanitized():
+        result = check_remotes(make_config(root))
     assert result.status.value == "failed"
     assert any("evil.example/x/y" in finding.message for finding in result.findings)
 
@@ -172,4 +170,5 @@ def test_actual_remote_and_pushurl_are_enumerated(make_config, tmp_repo) -> None
 def test_no_actual_remote_blocks_instead_of_allowlist_only_pass(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """A configured allowlist alone never produces a remote-gate pass."""
     root = tmp_repo("[remotes]\nallowlist=['github.com/org/repo']\n")
-    assert check_remotes(make_config(root)).status.value == "blocked"
+    with coverage_controls_sanitized():
+        assert check_remotes(make_config(root)).status.value == "blocked"

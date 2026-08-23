@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 from collections.abc import Mapping
@@ -10,27 +9,16 @@ from pathlib import Path
 
 import pytest
 
+from tests.support.process import run_process as _run_process
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def run_process(
     arguments: list[str], *, cwd: Path, input_text: str = "", env: Mapping[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """Run an argument vector so tests exercise scripts without shell interpolation."""
-    merged_env = os.environ.copy()
-    for key in ("COV_CORE_CONFIG", "COV_CORE_DATAFILE", "COV_CORE_SOURCE", "COV_CORE_BRANCH"):
-        merged_env.pop(key, None)
-    if env is not None:
-        merged_env.update(env)
-    return subprocess.run(
-        arguments,
-        cwd=cwd,
-        input=input_text,
-        text=True,
-        capture_output=True,
-        check=False,
-        env=merged_env,
-    )
+    """Preserve governance callers while sharing hermetic process execution."""
+    return _run_process(arguments, cwd=cwd, input_text=input_text, env=env)
 
 
 @pytest.fixture

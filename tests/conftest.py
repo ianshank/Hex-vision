@@ -7,7 +7,6 @@ coverage debt unless an actual recorded decision authorizes the exception.
 from __future__ import annotations
 
 import re
-import subprocess
 from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,7 @@ import pytest
 from pluggy import Result
 
 from hexvision.config import Config, load_config
+from tests.support.process import coverage_controls_sanitized, run_process
 
 _SKIP = re.compile(r"^\s*#\s*@governance-skip:\s*(\S+)\s+(\S.*)\s*$")
 
@@ -79,10 +79,23 @@ def tmp_repo(tmp_path: Path) -> Callable[[str], Path]:
             "[tool.hexvision.coverage]\nper_file_lines=90\nper_file_branches=80\n", encoding="utf-8"
         )
         (tmp_path / "hex-vision.toml").write_text(overlay, encoding="utf-8")
-        subprocess.run(["/usr/bin/git", "init"], cwd=tmp_path, check=True, capture_output=True)
+        run_process(["/usr/bin/git", "init"], cwd=tmp_path).check_returncode()
         return tmp_path
 
     return create
+
+
+@pytest.fixture(autouse=True)
+def sanitize_coverage_controls_for_indirect_test_processes() -> Generator[None, None, None]:
+    """Keep production subprocesses caused by tests outside parent coverage collection.
+
+    Tests may call a production API that starts a child internally. The child is
+    fixture behavior rather than code under coverage, so the shared sanitizer
+    removes pytest-cov controls for the test interval and restores the parent's
+    branch measurement afterward.
+    """
+    with coverage_controls_sanitized():
+        yield
 
 
 @pytest.fixture

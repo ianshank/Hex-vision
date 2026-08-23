@@ -9,6 +9,7 @@ import pytest
 
 from hexvision.cli import main
 from hexvision.traceability import check_traceability
+from tests.support.process import coverage_controls_sanitized
 
 
 def _trace_repo(root: Path, matrix_rows: str) -> None:
@@ -113,4 +114,5 @@ def test_cli_remotes_without_configured_destination_blocks(monkeypatch, tmp_repo
     """The actual remote command blocks when Git supplies no inspectable destination."""
     root = tmp_repo("[remotes]\nallowlist=['github.com/org/repo']\n")
     monkeypatch.chdir(root)
-    assert main(["remotes"]) == 2
+    with coverage_controls_sanitized():
+        assert main(["remotes"]) == 2
