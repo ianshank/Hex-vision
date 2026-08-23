@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Hex-vision L2 native pre-push body. Commit stamp: e0165e4 (2026-08-22).
-# It is fast feedback only: `git push --no-verify`, an uninstalled hook, and
-# destination changes outside the checkout are not caught here. L3 CI and L4
-# required workflow are authoritative. It never parses remote URLs: it binds the
-# exact Git-supplied URL into a temporary Git config and asks the one Python
-# normalizer to inspect it. Runner chain: project venv, then uv, then BLOCK (2).
+# Hex-vision L2 native pre-push release loop. Commit stamp: v3-infra (2026-08-22).
+# It validates Git's exact destination through the shared normalizer, then runs
+# the authoritative local release chain (`make pre-pr`). `git push --no-verify`,
+# an uninstalled hook, and checks a server does not require remain possible
+# bypasses, so L3 CI / required workflow remains authoritative. It never parses
+# remote URLs: it binds the exact Git-supplied URL into a temporary Git config
+# and asks the one Python normalizer to inspect it. Runner chain: project venv,
+# then uv, then BLOCK (2).
 set -u
 
 block() {
@@ -52,4 +54,14 @@ if [ "$NORMALIZER_RC" -ne 0 ]; then
 fi
 
 printf '%s\n' "pre-push scan: shared normalizer allowed Git's supplied destination" >&2
-exit 0
+if [ ! -f "$ROOT/Makefile" ]; then
+  # This source is also exercised in isolated normalizer fixtures that do not
+  # contain a governed Makefile. A governed repository must have one; otherwise
+  # no local release chain is available to run.
+  printf '%s\n' "pre-push scan: no governed Makefile found; destination check complete" >&2
+  exit 0
+fi
+make -C "$ROOT" -n pre-pr >/dev/null 2>&1 \
+  || block "governed Makefile does not provide the required pre-pr release target"
+printf '%s\n' "pre-push scan: starting authoritative local release chain (make pre-pr)" >&2
+exec make -C "$ROOT" pre-pr

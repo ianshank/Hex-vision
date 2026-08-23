@@ -6,3 +6,10 @@ title = "Hex-vision gitleaks policy"
 # silently loads zero rules, so it must remain even when this policy is tidied.
 [extend]
 useDefault = true
+
+# The repository intentionally carries no committed credential fixtures or
+# generated scanner reports. Keep this policy empty until a reviewed,
+# attributable false positive exists; a broad path/regex allowlist would hide
+# exactly the secret-bearing artefacts the governance harness is meant to find.
+# Any future `[[allowlists]]` entry must be limited to an exact path or commit,
+# include an owner and expiry comment, and be exercised by a negative test.

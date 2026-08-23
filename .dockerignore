@@ -1,0 +1,50 @@
+# Version control and worktree metadata are not runtime inputs. Secret scans of
+# Git history belong in a checkout/CI job, not in an image build context.
+.git/
+.gitmodules
+.gitignore
+
+# Local environments, caches, test reports, and build products.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.json
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+dist/
+build/
+*.egg-info/
+*.whl
+
+# Editor and operating-system state.
+.idea/
+.vscode/
+.fleet/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Worktree reports and generated local artefacts.
+HANDOFF.md
+.hexvision-*/
+
+# Never send credentials or local environment files to the Docker daemon.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.kdbx
+secrets/
+credentials/
