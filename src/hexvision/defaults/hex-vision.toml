@@ -299,11 +299,17 @@ decision_log_path = "docs/decision-log.md"
 [decision_log]
 # Records may be bare pipe rows or conventional leading/trailing-pipe Markdown
 # rows; either spelling must contain exactly these configured cells in order.
-columns = ["date", "id", "decision", "recorded-by"]
+# `subject`, `status`, and `supersedes` were added by DEC-018 (2026-08-23) for
+# the shared authority verifier (DEC-016): `subject` stays out of
+# required_columns because most records (kickoff/process decisions) authorize
+# nothing and a blank/placeholder cell says so; `status` is required because
+# lifecycle state must never have an implicit default; `supersedes` stays out
+# of required_columns because most records supersede nothing.
+columns = ["date", "id", "decision", "recorded-by", "subject", "status", "supersedes"]
 date_column = "date"
 identifier_column = "id"
 date_format = "%Y-%m-%d"
-required_columns = ["date", "id", "decision", "recorded-by"]
+required_columns = ["date", "id", "decision", "recorded-by", "status"]
 placeholder_values = ["", "-", "n/a", "tbd"]
 delimiter = "|"
 # Examples in code fences and HTML comments are documentation, never authority.

@@ -16,7 +16,8 @@ def test_decision_log_accepts_bare_and_delimited_configured_rows(tmp_repo: Any) 
     schema = load_decision_log_schema(config)
 
     parsed = parse_decision_log(
-        "2026-08-22 | DEC-001 | approved | owner\n| 2026-08-23 | G-PUB | release | reviewer |\n",
+        "2026-08-22 | DEC-001 | approved | owner | - | active | -\n"
+        "| 2026-08-23 | G-PUB | release | reviewer | - | active | - |\n",
         schema,
     )
 
@@ -84,7 +85,7 @@ def test_decision_ids_excludes_invalid_and_retains_valid_records(tmp_repo: Any) 
     root = tmp_repo()
     path = root / "decisions.md"
     path.write_text(
-        "2026-08-22 | DEC-001 | approved | owner\n"
+        "2026-08-22 | DEC-001 | approved | owner | - | active | -\n"
         "# 2026-08-22 | DEC-FAKE | comment | owner\n"
         "```\n2026-08-22 | G-PUB | example | owner\n```\n",
         encoding="utf-8",
@@ -97,7 +98,7 @@ def test_decision_log_rejects_separator_rows_with_a_specific_grammar_reason(tmp_
     """A Markdown separator cannot be mistaken for a dated append-only decision record."""
     schema = load_decision_log_schema(load_config(root=tmp_repo(), env={}))
 
-    parsed = parse_decision_log("| --- | --- | --- | --- |\n", schema)
+    parsed = parse_decision_log("| --- | --- | --- | --- | --- | --- | --- |\n", schema)
 
     assert not parsed.records
     assert parsed.rejections[0].reason == "date cell does not match configured format '%Y-%m-%d'"
