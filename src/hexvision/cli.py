@@ -20,6 +20,7 @@ from hexvision.gates.base import run_gate
 from hexvision.gates.contract import CoverageFloorGate, MakefileAuthorityGate, ZeroSkipAuditGate
 from hexvision.gates.model import GateResult
 from hexvision.gates.publication import PublicationGate
+from hexvision.orchestration import run_active_domain_gates
 from hexvision.packs.registry import available, load
 from hexvision.projections import check_projections
 from hexvision.remotes import check_remotes
@@ -72,6 +73,9 @@ def build_parser() -> argparse.ArgumentParser:
     show = pack_sub.add_parser("show")
     show.add_argument("name")
     _json_argument(show)
+    gates = pack_sub.add_parser("gates")
+    gates.add_argument("--all-active", action="store_true", required=True)
+    _json_argument(gates)
     config = sub.add_parser("config")
     config_sub = config.add_subparsers(dest="config_command", required=True)
     dump = config_sub.add_parser("dump")
@@ -121,7 +125,9 @@ def _dispatch(  # noqa: PLR0911 - each explicit branch is a public CLI route.
     if args.command == "pack":
         if args.pack_command == "list":
             return _data_result("pack-list", list(available()))
-        return _data_result("pack-show", load(args.name).describe(config))
+        if args.pack_command == "show":
+            return _data_result("pack-show", load(args.name).describe(config))
+        return run_active_domain_gates(config)
     if args.config_command == "dump":
         return _data_result("config-dump", config.as_dict())
     explanation = config.explain(args.key)

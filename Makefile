@@ -40,7 +40,7 @@ PKG ?= hexvision
 PACK ?= jetson
 
 .PHONY: help install format lint types test cov secrets specs audit remotes \
-        projections traceability conformance publication guard-probe pre-pr clean \
+        projections traceability conformance domain-gates publication guard-probe pre-pr clean \
         secrets-install audit-install
 
 help: ## Show this help
@@ -166,6 +166,9 @@ traceability: ## Requirement-traceability lint
 conformance: ## Assert PACK satisfies every clause of the Gate Harness Contract
 	$(RUN) python -m $(PKG).cli conformance --pack $(PACK) --json
 
+domain-gates: ## Execute every registered domain gate for each configured active pack
+	$(RUN) python -m $(PKG).cli pack gates --all-active --json
+
 publication: ## Release-time public destination and G-PUB authorization control
 	$(RUN) python -m $(PKG).cli publication --json
 
@@ -177,7 +180,7 @@ guard-probe: ## Show the PreToolUse guard's verdict for CMD, with tracing
 
 # --- the pre-PR gate ------------------------------------------------------
 
-pre-pr: install lint types cov secrets specs audit remotes projections traceability conformance ## Every configured CI gate, in CI order
+pre-pr: install lint types cov secrets specs audit remotes projections traceability conformance domain-gates ## Every configured CI gate, in CI order
 	@echo
 	@echo "pre-PR validation complete — every configured CI gate has passed locally."
 
