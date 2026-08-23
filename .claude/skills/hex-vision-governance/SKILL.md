@@ -31,6 +31,10 @@ Use the per-milestone PR and engineering-hour budget in the charter. Process-sco
 - **DEC-004** (2026-08-22): build the complete scaffold in this session.
 - **RB-001** (2026-08-22): re-baseline after the supplied archive lacked a Python pack and planning documents.
 - **DEC-009** (2026-08-22): retain `@governance-skip` decisions as audit evidence, but make every pytest skip and xfail fail; declared hardware-in-the-loop gate status is unaffected.
+- **DEC-017** (2026-08-23): C-6 scope clarification — `G-PUB`-gated publication means a formal release or the Hugging Face destinations, not ordinary development pushes to the already-established GitHub origin.
+- **DEC-018** (2026-08-23): authorizes widening the decision-log schema to 7 columns (adds `subject`, `status`, `supersedes`) for the DEC-016 authority verifier; all pre-existing records migrated with their first four cells preserved byte-for-byte.
+- **DEC-019** (2026-08-23): reconfirms DEC-013 (hil_smoke absence) under the widened schema; supersedes DEC-013.
+- **DEC-020** (2026-08-23): reconfirms DEC-014 (sitl_mission absence) under the widened schema; supersedes DEC-014.
 
 This section is mechanically checked by `tests/governance/test_skill_freshness.py`: every decision-log ID dated on or after the date in this heading must appear here.
 
