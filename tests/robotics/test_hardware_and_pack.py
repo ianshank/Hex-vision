@@ -18,13 +18,19 @@ from hexvision.robotics.hardware_in_loop import HardwareInLoopGate
 
 # Traceability: R-15 [Runner is present, Runner is absent]
 def test_hardware_missing_without_decision_is_visible_blocker(tmp_path: Path) -> None:
-    """A missing runner yields the declared-skip status with its unauthorised blocker."""
-    config = load_config(root=tmp_path, env={})
-    result = HardwareInLoopGate().check(config)
-    assert result.status is GateStatus.SKIPPED_DECLARED
-    assert result.findings[0].id == "HARDWARE-IN-LOOP-UNDECLARED-SKIP"
+    """An unauthorised runner absence is BLOCKED, not a declared skip.
+
+    The gate could not look at the hardware and no decision accepted that, so
+    reporting SKIPPED_DECLARED would advertise an owned skip while decision_id is
+    None. A reader scanning for skips would treat it as already reviewed.
+    """
+    result = HardwareInLoopGate().check(load_config(root=tmp_path, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert result.measurements["decision_id"] is None
+    assert result.findings[0].id == "HARDWARE-IN-LOOP-BLOCKED"
     assert result.findings[0].severity is Severity.BLOCKER
-    assert "absent configured hardware runners" in result.findings[0].message
+    assert "without decision-log authority" in result.findings[0].message
+    assert "hil_smoke" in result.findings[0].message
     assert result.measurements["missing"] == {"hil_smoke": None, "sitl_mission": None}
 
 

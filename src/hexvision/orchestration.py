@@ -123,14 +123,46 @@ def _aggregate(
             clause=_CLAUSE,
             measurements=measurements,
         )
-    if GateStatus.SKIPPED_DECLARED in statuses:
-        return GateResult(
-            gate=_GATE_NAME,
-            status=GateStatus.SKIPPED_DECLARED,
+    declared = [
+        (pack_name, result)
+        for pack_name, result in results
+        if result.status is GateStatus.SKIPPED_DECLARED
+    ]
+    if declared:
+        # GateStatus.SKIPPED_DECLARED maps to the FAILED exit code by default so an
+        # unowned skip is red unless something converts it. The converting authority
+        # is the decision-log entry, and per that mapping's own documentation the
+        # conversion belongs to the gate rather than to the mapping. A skip whose
+        # authority is missing is now reported BLOCKED by the producing gate, so
+        # anything still declared here is authorised. The unauthorised branch below
+        # remains as a defence against a future gate that forgets to resolve
+        # authority: it names the offending gate instead of emitting a bare
+        # non-zero exit that an operator would have to guess at.
+        unauthorised = [
+            f"{pack_name}/{result.gate}"
+            for pack_name, result in declared
+            if not result.measurements.get("decision_id")
+        ]
+        if unauthorised:
+            return GateResult.failed(
+                _GATE_NAME,
+                summary="a declared domain-gate skip carries no authorising decision",
+                findings=findings,
+                clause=_CLAUSE,
+                measurements={**measurements, "unauthorised_declared_skips": unauthorised},
+            )
+        authorised = {
+            f"{pack_name}/{result.gate}": result.measurements["decision_id"]
+            for pack_name, result in declared
+        }
+        return GateResult.passed(
+            _GATE_NAME,
+            summary=(
+                "every active pack domain gate passed; "
+                f"{len(authorised)} declared unavailable under recorded decisions"
+            ),
             clause=_CLAUSE,
-            summary="one or more domain gates are declared unavailable",
-            findings=findings,
-            measurements=measurements,
+            measurements={**measurements, "authorised_declared_skips": authorised},
         )
     return GateResult.passed(
         _GATE_NAME,

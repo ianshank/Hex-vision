@@ -11,10 +11,17 @@
 
 [meta]
 env_prefix = "HEXVISION_"
-# Most tables are a closed contract: an overlay typo must fail rather than sit
-# inert. These are the two deliberate maps keyed by invariant ID, whose readers
-# consume every member dynamically and therefore may gain reviewed entries.
-extensible_tables = ["contract.invariants", "contract.invariant_enforcement"]
+# Tables whose member names are chosen by the adopter rather than shipped by this
+# contract. Members of these tables are accepted without being declared here;
+# every other key must be declared, so a typo is rejected instead of ignored.
+# robotics.hardware_in_loop.runners is adopter-named because the set of hardware
+# rigs is site-specific: an adopter with a rig this project has never heard of
+# must be able to declare it without editing the packaged contract.
+extensible_tables = [
+  "contract.invariants",
+  "contract.invariant_enforcement",
+  "robotics.hardware_in_loop.runners",
+]
 
 [meta.frozen]
 # Frozen key prefixes: resolvable from `packaged`, `repo` and `pyproject` only.
@@ -57,7 +64,7 @@ targets = [
 # local pass stops predicting a CI pass, which is the only reason to run it.
 pre_pr_order = [
   "install", "lint", "types", "cov", "secrets", "specs", "audit", "remotes",
-  "projections", "traceability", "conformance", "domain-gates",
+  "projections", "agent-validation", "traceability", "conformance", "domain-gates",
 ]
 # Conformance reads the authoritative prerequisite chain from this repository
 # artifact; packs must delegate to it instead of copying the chain themselves.

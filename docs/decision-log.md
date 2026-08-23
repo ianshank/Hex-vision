@@ -20,3 +20,20 @@ a configuration that previously ran and passed.
 | 2026-08-22 | DEC-010 | The test session refuses to run when the imported hexvision package resolves outside the checkout under test. A shared virtual environment holds an editable install, which is a path pointer, so a sibling clone or worktree can repoint it; the suite then passes against code that is not the code under review. This was observed in practice and produced a false green, so it is enforced at configure time rather than documented as a caveat. Cost accepted: an operator who deliberately tests an installed copy from outside its source tree must reinstall first. | architect |
 | 2026-08-22 | DEC-011 | A mission baseline comparison is valid only when the configured command reads and parses the prior mission. A non-new-mission command failure, timeout, unavailable runner, malformed baseline, or unsafe evidence path returns BLOCKED with bounded redacted diagnostics; it cannot be represented as a clean new mission. A genuinely absent baseline follows the explicit frozen `new_mission_requires_decision` policy. | safety-evidence |
 | 2026-08-22 | DEC-012 | Password-bearing remote userinfo and absent hardware-in-the-loop runners remain unconditional policies. Their misleading configuration toggles were removed because neither safe behavior has a reviewed insecure alternative: credential-bearing URLs are always rejected, and missing hardware evidence always requires an explicit decision. Jetson launcher construction remains Makefile authority; unused pack launcher keys were removed rather than implying overlays control Make. | architect |
+
+<!--
+DEC-013 and DEC-014 authorise the absence of hardware-in-the-loop runners in this
+environment. They are recorded separately, one per runner, because the gate
+resolves authority per runner: a single blanket entry would let a later runner be
+added and silently inherit an authorisation nobody granted it.
+-->
+
+| 2026-08-22 | DEC-013 | The hil_smoke hardware runner is unavailable in this environment. No drone or Jetson hardware is attached to the development and CI environment, so the smoke scenario cannot execute and its evidence cannot be produced. The absence is accepted for pre-release validation only. It is not accepted for a flight-authorising release: the release checklist in docs/NEXT-STEPS.md carries provisioning real hardware evidence as outstanding work, and this entry must be withdrawn rather than extended once a rig exists. | architect |
+| 2026-08-22 | DEC-014 | The sitl_mission hardware runner is unavailable in this environment. Software-in-the-loop mission simulation is not provisioned here, so the gate cannot observe mission execution. Accepted on the same terms as DEC-013 and withdrawn on the same trigger. Recording this separately from DEC-013 keeps per-runner authority explicit, so adding a third runner blocks until someone accepts it by name. | architect |
+
+<!--
+DEC-015 settles a contradiction found during the third review pass, where two
+parts of the codebase encoded opposite answers to the same question.
+-->
+
+| 2026-08-22 | DEC-015 | An authorised declared skip passes the release aggregate; an unauthorised one does not. Two parts of the codebase disagreed: the status mapping documented that the authorising decision-log entry converts a declared skip to a pass, while the release aggregate returned a red exit for every declared skip regardless of authority. The mapping wins, because the alternative makes the decision log decorative: no release could ever go green while a documented and owned exception existed, so the incentive would be to delete the skip rather than record it. Visibility is preserved separately rather than through the exit code: the aggregate counts declared skips in its summary and lists each one against the decision that authorises it. Absences with no authority are reported BLOCKED by the producing gate, so they cannot reach this path unnoticed. | architect |

@@ -258,8 +258,20 @@ def test_all_passing_active_domain_gates_produce_a_passing_release_verdict(tmp_r
 
 
 # Traceability: R-19 [Unavailable domain gate evidence]
-def test_declared_domain_unavailability_remains_a_distinct_aggregate_status(tmp_repo: Any) -> None:
-    """An authorised declared absence is visible and non-successful, not collapsed to FAILED."""
+def test_authorised_declared_absence_passes_but_stays_visible(tmp_repo: Any) -> None:
+    """A declared absence with a recorded decision passes, and names its authority.
+
+    GateStatus.SKIPPED_DECLARED maps to the FAILED exit code by default, and that
+    mapping documents that the authorising decision-log entry is what converts it
+    to a pass, in the gate rather than in the mapping. If the aggregate stayed red
+    for an authorised absence, the decision-log mechanism would be decorative: no
+    release could ever go green while a documented, owned exception existed.
+
+    Visibility is the other half of the contract and is asserted here too. The
+    absence is not swallowed: it is counted in the summary and each skip is listed
+    against the decision that authorises it, so a reader cannot mistake this run
+    for one where every gate actually ran.
+    """
     calls: list[str] = []
     skipped = GateResult.skipped_declared(
         "declared-gap",
@@ -274,11 +286,41 @@ def test_declared_domain_unavailability_remains_a_distinct_aggregate_status(tmp_
     result = run_active_domain_gates(_config(tmp_repo, pack.name))
 
     assert calls == ["declared-gap"]
-    assert result.status is GateStatus.SKIPPED_DECLARED
-    assert result.exit_code == 1
-    assert result.findings == ()
+    assert result.status is GateStatus.PASSED
+    assert result.exit_code == 0
+    assert result.measurements["authorised_declared_skips"] == {
+        "declared-pack/declared-gap": "DEC-777"
+    }
+    assert "1 declared unavailable under recorded decisions" in result.summary
     gate_measurements = result.measurements["gate_results"][0]["result"]["measurements"]
     assert gate_measurements["decision_id"] == "DEC-777"
+
+
+# Traceability: R-19 [Unavailable domain gate evidence]
+def test_unauthorised_declared_absence_fails_and_names_the_gate(tmp_repo: Any) -> None:
+    """A declared skip carrying no decision is red, and says which gate it was.
+
+    Producing gates now report an unowned absence as BLOCKED, so this aggregate
+    branch is a defence against a future gate that forgets to resolve authority.
+    It must not degrade into a bare non-zero exit that an operator has to guess at.
+    """
+    calls: list[str] = []
+    skipped = GateResult.skipped_declared(
+        "unowned-gap",
+        summary="unowned runner absence",
+        reason="runner is unavailable and nobody accepted that",
+        decision_id=None,
+        clause="R-19",
+    )
+    pack = _TestPack("unowned-pack", (_RecordingGate("unowned-gap", skipped, calls),))
+    registry.register(pack)
+
+    result = run_active_domain_gates(_config(tmp_repo, pack.name))
+
+    assert calls == ["unowned-gap"]
+    assert result.status is GateStatus.FAILED
+    assert result.exit_code == 1
+    assert result.measurements["unauthorised_declared_skips"] == ["unowned-pack/unowned-gap"]
 
 
 # Traceability: R-19 [Configured release order]

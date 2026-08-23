@@ -39,7 +39,7 @@ PKG ?= hexvision
 # of the pack registry is that this list is not fixed in the harness.
 PACK ?= jetson
 
-.PHONY: help install format lint types test cov secrets specs audit remotes \
+.PHONY: help install format lint types test cov secrets specs audit remotes agent-validation \
         projections traceability conformance domain-gates publication guard-probe pre-pr clean \
         secrets-install audit-install
 
@@ -166,6 +166,9 @@ traceability: ## Requirement-traceability lint
 conformance: ## Assert PACK satisfies every clause of the Gate Harness Contract
 	$(RUN) python -m $(PKG).cli conformance --pack $(PACK) --json
 
+agent-validation: ## Validate governed agent and skill definitions deterministically
+	$(RUN) python -m $(PKG).agent_validation
+
 domain-gates: ## Execute every registered domain gate for each configured active pack
 	$(RUN) python -m $(PKG).cli pack gates --all-active --json
 
@@ -180,7 +183,7 @@ guard-probe: ## Show the PreToolUse guard's verdict for CMD, with tracing
 
 # --- the pre-PR gate ------------------------------------------------------
 
-pre-pr: install lint types cov secrets specs audit remotes projections traceability conformance domain-gates ## Every configured CI gate, in CI order
+pre-pr: install lint types cov secrets specs audit remotes projections agent-validation traceability conformance domain-gates ## Every configured CI gate, in CI order
 	@echo
 	@echo "pre-PR validation complete — every configured CI gate has passed locally."
 

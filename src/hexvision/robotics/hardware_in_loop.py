@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from hexvision.config import Config
@@ -175,27 +175,7 @@ class HardwareInLoopGate(Gate):
             "hardware runners assessed", extra={"executed": len(executed), "missing": len(missing)}
         )
         if missing:
-            unauthorised = [gate for gate, decision in missing.items() if decision is None]
-            decision_id = ",".join(decision for decision in missing.values() if decision) or None
-            base = GateResult.skipped_declared(
-                self.name,
-                summary="one or more configured hardware runners are absent",
-                reason=f"absent configured hardware runners: {', '.join(sorted(missing))}",
-                decision_id=decision_id if not unauthorised else None,
-                clause=self.clause,
-            )
-            combined_findings = (*base.findings, *findings)
-            return self._finish(
-                GateResult(
-                    gate=base.gate,
-                    status=base.status,
-                    clause=base.clause,
-                    summary=base.summary,
-                    findings=GateResult._sorted(combined_findings),
-                    measurements={**dict(base.measurements), **measurements},
-                ),
-                "declared-runner-absence",
-            )
+            return self._absence_result(missing, findings, measurements)
         if findings:
             return self._finish(
                 GateResult.failed(
@@ -215,6 +195,61 @@ class HardwareInLoopGate(Gate):
                 measurements=measurements,
             ),
             "all-runners-completed",
+        )
+
+    def _absence_result(
+        self,
+        missing: Mapping[str, str | None],
+        findings: Sequence[Finding],
+        measurements: Mapping[str, Any],
+    ) -> GateResult:
+        """Classify absent hardware runners by whether a decision owns the absence.
+
+        Extracted from ``check`` so each absence outcome is one short branch and the
+        classification can be reasoned about, and tested, on its own.
+        """
+        unauthorised = sorted(gate for gate, decision in missing.items() if decision is None)
+        if unauthorised:
+            # An absent runner that no decision authorises means the gate could not
+            # look at the hardware and nobody accepted that. That is BLOCKED.
+            # Reporting SKIPPED_DECLARED here would advertise an owned skip while
+            # decision_id is None, which is the state collapse this project exists to
+            # prevent: a reader scanning for skips treats it as already reviewed.
+            return self._finish(
+                GateResult.blocked(
+                    self.name,
+                    summary="a configured hardware runner is absent and unauthorised",
+                    reason=(
+                        "absent configured hardware runners without decision-log "
+                        f"authority: {', '.join(unauthorised)}"
+                    ),
+                    clause=self.clause,
+                    remediation=(
+                        "Log a decision naming this gate and the runner it needs, "
+                        "or provide the runner."
+                    ),
+                    measurements={**measurements, "decision_id": None},
+                ),
+                "unauthorised-runner-absence",
+            )
+        decision_id = ",".join(decision for decision in missing.values() if decision) or None
+        base = GateResult.skipped_declared(
+            self.name,
+            summary="one or more configured hardware runners are absent",
+            reason=f"absent configured hardware runners: {', '.join(sorted(missing))}",
+            decision_id=decision_id,
+            clause=self.clause,
+        )
+        return self._finish(
+            GateResult(
+                gate=base.gate,
+                status=base.status,
+                clause=base.clause,
+                summary=base.summary,
+                findings=GateResult._sorted((*base.findings, *findings)),
+                measurements={**dict(base.measurements), **measurements},
+            ),
+            "declared-runner-absence",
         )
 
     def _finish(self, result: GateResult, decision: str) -> GateResult:

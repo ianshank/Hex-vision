@@ -102,8 +102,8 @@ def test_hardware_decision_symlink_does_not_authorise_absence(tmp_path: Path) ->
         encoding="utf-8",
     )
     result = HardwareInLoopGate().check(load_config(root=tmp_path, env={}))
-    assert result.status is GateStatus.SKIPPED_DECLARED
-    assert result.findings[0].id == "HARDWARE-IN-LOOP-UNDECLARED-SKIP"
+    assert result.status is GateStatus.BLOCKED
+    assert result.measurements["decision_id"] is None
     assert result.measurements["missing"] == {"hil_smoke": None, "sitl_mission": None}
 
 
