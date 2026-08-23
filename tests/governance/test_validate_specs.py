@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+import platform
 import subprocess
 from pathlib import Path
 
-from tests.governance.conftest import run_process
+from tests.governance.conftest import REPO_ROOT, run_process
 
 
 def write_valid_change(repo: Path, *, requirement_id: str = "R-100") -> Path:
@@ -27,13 +30,17 @@ def write_valid_change(repo: Path, *, requirement_id: str = "R-100") -> Path:
 
 
 def run_validator(
-    repo: Path, *, validator: str = "definitely-not-installed-validator"
+    repo: Path, *, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """Execute the versioned wrapper with a deliberately absent strict tool."""
+    """Execute the versioned wrapper through this checkout's isolated environment."""
+    runtime_bin = REPO_ROOT / ".venv" / "bin"
     return run_process(
         ["/bin/bash", "scripts/validate_specs.sh"],
         cwd=repo,
-        env={"SPEC_VALIDATOR": validator},
+        env={
+            "PATH": f"{runtime_bin}{os.pathsep}{os.environ['PATH']}",
+            **({} if env is None else env),
+        },
     )
 
 
@@ -42,7 +49,11 @@ def test_validate_specs_loudly_degrades_without_strict_validator(git_repo: Path)
     write_valid_change(git_repo)
     result = run_validator(git_repo)
     assert result.returncode == 0, result.stderr
-    assert "WARNING — strict validator" in result.stderr
+    assert (
+        "WARNING — strict validator is unavailable or its configured artifact is unverified."
+        in result.stderr
+    )
+    assert "specification validator identity BLOCKED" in result.stderr
     assert "structural validation passed" in result.stdout
 
 
@@ -89,12 +100,41 @@ def test_validate_specs_blocks_duplicate_requirement_ids_across_specs(git_repo: 
     assert f"duplicate requirement id R-{101}" in result.stderr
 
 
-def test_validate_specs_propagates_strict_validator_failure(git_repo: Path) -> None:
-    """A present strict tool that fails cannot be masked by a passing Tier 2."""
+def test_validate_specs_ignores_environment_validator_override(git_repo: Path) -> None:
+    """An arbitrary successful environment command never claims strict validation."""
+    write_valid_change(git_repo)
+    result = run_validator(git_repo, env={"SPEC_VALIDATOR": "true"})
+    assert result.returncode == 0, result.stderr
+    assert "strict validation via true" not in result.stderr
+    assert (
+        "strict validator is unavailable or its configured artifact is unverified." in result.stderr
+    )
+    assert "structural validation passed" in result.stdout
+
+
+def test_validate_specs_propagates_verified_strict_validator_failure(git_repo: Path) -> None:
+    """A verified strict tool failure cannot be masked by a passing structural tier."""
     write_valid_change(git_repo)
     strict = git_repo / "strict-validator"
     strict.write_text("#!/bin/sh\necho strict failure >&2\nexit 9\n", encoding="utf-8")
     strict.chmod(0o755)
-    result = run_validator(git_repo, validator=str(strict))
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    digest = hashlib.sha256(strict.read_bytes()).hexdigest()
+    (git_repo / "hex-vision.toml").write_text(
+        "\n".join(
+            (
+                "[specification_validator]",
+                f'executable = "{strict}"',
+                'version = "test"',
+                f"[specification_validator.platforms.{system}.{machine}]",
+                f'artifact_sha256 = "{digest}"',
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    result = run_validator(git_repo)
     assert result.returncode == 9
+    assert f"strict validation via {strict}" in result.stderr
     assert "strict failure" in result.stderr

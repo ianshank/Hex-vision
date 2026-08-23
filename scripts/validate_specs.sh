@@ -9,18 +9,25 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 CHANGES_DIR="$ROOT/openspec/changes"
-VALIDATOR="${SPEC_VALIDATOR:-openspec}"
+PYTHON="$ROOT/.venv/bin/python"
+if [ ! -x "$PYTHON" ]; then
+  # Installed users need only a Python that can import the package. Source
+  # worktrees use their isolated environment even when Make invokes this script
+  # through a non-activated shell.
+  PYTHON="python3"
+fi
 
 [ -d "$CHANGES_DIR" ] || {
   echo "specs: $CHANGES_DIR does not exist; refusing to validate nothing" >&2
   exit 1
 }
 
-if command -v "$VALIDATOR" >/dev/null 2>&1; then
+if VALIDATOR="$("$PYTHON" -m hexvision.scanner_identity verify-spec-validator 2>&1)"; then
   echo "specs: strict validation via $VALIDATOR" >&2
   "$VALIDATOR" validate "$CHANGES_DIR" --strict
 else
-  echo "specs: WARNING — strict validator '$VALIDATOR' is not installed." >&2
+  echo "specs: WARNING — strict validator is unavailable or its configured artifact is unverified." >&2
+  echo "specs: $VALIDATOR" >&2
   echo "specs: structural Tier 2 remains active; install it to close the schema gap." >&2
 fi
 

@@ -49,7 +49,7 @@ No source imports need wiring. Ensure the parallel `hexvision.packs.jetson` entr
 ## Adversarial audit remediation
 
 - The remote gate now reads both `git remote -v` and `git config --get-regexp '^remote\\..*\\.(url|pushurl)$'`; it blocks with no configured URLs and checks every unique fetch/push URL.
-- The SCP normalizer rejects `user:token@host:path` as well as scheme-form password/token userinfo.
+- The SCP normalizer rejects `user:token@host:path` as well as scheme-form password/token userinfo. Credential-bearing userinfo is an unconditional security invariant, not an overlay toggle: there is no supported false path.
 - Direct `main([])` and malformed argument paths return usage exit code 3; `hexvision remotes` with no resolvable remote blocks rather than passing.
 - The runtime skip guard binds an annotation to the contiguous comment/decorator block for the specific test, requires a matched ID plus nonblank reason, resolves that ID against the configured decision log, and authorizes nothing when the log is unavailable.
 - Added a behavioral coverage negative control proving an unimported source file is emitted in coverage JSON.

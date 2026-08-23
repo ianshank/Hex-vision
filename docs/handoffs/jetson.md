@@ -28,8 +28,9 @@
   `numeric_limits.{rtl_battery_percent,max_tilt_deg,geofence_radius_m,max_altitude_m}`.
 - `robotics.hardware_in_loop.runners`, `decision_log_path`,
   `decision_id_pattern`, and `timeout_seconds`.
-- `packs.jetson.package_manager`, `runner`, `targets`, `tools`, and
-  `degraded_rationale`.
+- `packs.jetson.targets`, `tools`, and `degraded_rationale`. The Makefile is
+  the authority for launcher construction (`PM`/`RUN`); this pack intentionally
+  does not expose package-manager or runner configuration that it cannot enact.
 
 `robotics.artifact_roots` is pre-existing and is now consumed directly when
 finding configured artifact formats.

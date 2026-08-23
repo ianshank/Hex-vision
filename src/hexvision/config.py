@@ -199,6 +199,23 @@ def _flatten(data: Mapping[str, Any], prefix: str = "") -> Iterator[tuple[str, A
             yield from _flatten(value, prefix=f"{dotted}.")
 
 
+def _assert_supported_keys(
+    data: Mapping[str, Any],
+    *,
+    supported_keys: frozenset[str],
+    extensible_tables: tuple[str, ...],
+    source: str,
+) -> None:
+    """Reject unsupported keys, allowing only shipped, explicitly extensible maps."""
+    for key, _ in _flatten(data):
+        is_dynamic_member = any(key.startswith(f"{table}.") for table in extensible_tables)
+        if key not in supported_keys and not is_dynamic_member:
+            raise ConfigError(
+                f"unsupported configuration key {key!r} in {source}. "
+                "Declare only keys shipped by the packaged configuration contract."
+            )
+
+
 def _parse_env_value(raw: str) -> Any:
     """Type an environment string by parsing it as a TOML value.
 
@@ -444,11 +461,24 @@ def load_config(
         _deep_merge(merged, data)
         _LOG.debug("config layer applied", extra={"layer": layer, "source": source})
 
+    packaged_defaults = _read_toml(_PACKAGED_DEFAULTS)
+    supported_keys = frozenset(key for key, _ in _flatten(packaged_defaults))
+    extensible_tables = tuple(
+        str(table)
+        for table in (_nested_get(packaged_defaults, ("meta", "extensible_tables")) or ())
+    )
     file_layers = _layer_sources(resolved_root, config_path)
     for layer, path in file_layers:
         data = _read_toml(path)
         if layer == ConfigLayer.PYPROJECT:
             data = dict(_nested_get(data, _PYPROJECT_TABLE) or {})
+        if layer != ConfigLayer.PACKAGED:
+            _assert_supported_keys(
+                data,
+                supported_keys=supported_keys,
+                extensible_tables=extensible_tables,
+                source=str(path),
+            )
         apply(layer, data, str(path))
 
     # Frozen prefixes come from the merged file layers, so a repository can
@@ -459,12 +489,24 @@ def load_config(
 
     env_data = _env_layer(resolved_env, env_prefix)
     if env_data:
+        _assert_supported_keys(
+            env_data,
+            supported_keys=supported_keys,
+            extensible_tables=extensible_tables,
+            source=f"the environment ({env_prefix}*)",
+        )
         _assert_no_frozen_writes(
             ConfigLayer.ENV, env_data, frozen_prefixes, f"the environment ({env_prefix}*)"
         )
         apply(ConfigLayer.ENV, env_data, "environment")
 
     if overrides:
+        _assert_supported_keys(
+            overrides,
+            supported_keys=supported_keys,
+            extensible_tables=extensible_tables,
+            source="a command-line override",
+        )
         _assert_no_frozen_writes(
             ConfigLayer.OVERRIDE, overrides, frozen_prefixes, "a command-line override"
         )
