@@ -8,7 +8,7 @@ about NVIDIA hardware or perception models.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Final
+from typing import Final
 
 from hexvision.config import Config
 from hexvision.gates.base import Gate
@@ -79,7 +79,7 @@ class JetsonPack(Pack):
         )
 
 
-def _strings(value: Any) -> tuple[str, ...]:
+def _strings(value: object) -> tuple[str, ...]:
     """Validate configured argument vectors so pack execution cannot guess a command."""
     if (
         not isinstance(value, list)

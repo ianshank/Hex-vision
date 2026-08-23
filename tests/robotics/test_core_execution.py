@@ -98,11 +98,27 @@ def test_structured_logging_writes_json_to_given_stream() -> None:
     assert get_logger("hexvision").name == "hexvision"
 
 
-@pytest.mark.parametrize("kwargs", [{"level": "NOPE"}, {"fmt": "binary"}])
-def test_logging_rejects_unknown_configuration(kwargs: dict[str, str]) -> None:
+@pytest.mark.parametrize(
+    ("setting", "value", "message"),
+    [
+        ("level", "NOPE", r"unknown log level 'NOPE'"),
+        ("fmt", "binary", r"unknown log format 'binary'"),
+    ],
+)
+def test_logging_rejects_unknown_configuration(
+    setting: Literal["level", "fmt"], value: str, message: str
+) -> None:
     """A misspelled observability setting cannot silently hide a governance result."""
-    with pytest.raises(ValueError):
-        configure_logging(env={}, **kwargs)
+    with pytest.raises(ValueError, match=message):
+        _configure_invalid_logging(setting, value)
+
+
+def _configure_invalid_logging(setting: Literal["level", "fmt"], value: str) -> None:
+    """Call the selected logging setting explicitly so the assertion contains only the operation."""
+    if setting == "level":
+        configure_logging(env={}, level=value)
+    else:
+        configure_logging(env={}, fmt=value)
 
 
 def _raise_example() -> None:
@@ -137,5 +153,5 @@ def test_gate_result_serialises_and_sorts_findings() -> None:
     minor = Finding("a", Severity.MINOR, "note")
     result = GateResult.failed("g", summary="bad", findings=(minor, major))
     assert [item["id"] for item in result.to_dict()["findings"]] == ["b", "a"]
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"failed without recording a finding"):
         GateResult.failed("g", summary="bad", findings=())

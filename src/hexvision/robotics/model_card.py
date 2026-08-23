@@ -11,7 +11,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Final
 
 from hexvision.config import Config
 from hexvision.gates.base import Gate
@@ -37,10 +37,10 @@ class ModelCard:
     """
 
     path: Path
-    fields: Mapping[str, Any]
+    fields: Mapping[str, object]
 
 
-def parse_front_matter(text: str) -> dict[str, Any]:
+def parse_front_matter(text: str) -> dict[str, object]:
     """Parse the supported YAML-style front matter without guessing at YAML.
 
     The subset accepts top-level ``key: scalar`` pairs and indented scalar lists.
@@ -59,8 +59,8 @@ def parse_front_matter(text: str) -> dict[str, Any]:
     except StopIteration as exc:
         raise ValueError("model card front matter has no closing delimiter") from exc
 
-    parsed: dict[str, Any] = {}
-    active_list: list[Any] | None = None
+    parsed: dict[str, object] = {}
+    active_list: list[object] | None = None
     active_key: str | None = None
     key_pattern = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
     for line_number, raw_line in enumerate(lines[1:end], 2):
@@ -93,7 +93,7 @@ def parse_front_matter(text: str) -> dict[str, Any]:
     return parsed
 
 
-def _parse_scalar(value: str, line_number: int) -> Any:
+def _parse_scalar(value: str, line_number: int) -> object:
     """Parse an intentionally limited scalar while rejecting ambiguous YAML."""
     if value.startswith(("&", "*", "{", "|", ">")):
         raise ValueError(f"unsupported YAML construct at model card line {line_number}")
@@ -152,7 +152,7 @@ def load_model_cards(config: Config) -> tuple[ModelCard, ...]:
     return tuple(cards)
 
 
-def _nonempty(value: Any) -> bool:
+def _nonempty(value: object) -> bool:
     """Return whether a metadata value records an actual declared value."""
     return value is not None and (not isinstance(value, str) or bool(value.strip())) and value != []
 
@@ -387,7 +387,7 @@ class ModelCardGate(Gate):
         return findings
 
 
-def _strings(value: Any) -> tuple[str, ...]:
+def _strings(value: object) -> tuple[str, ...]:
     """Convert a configured list to strings while making malformed policy visible."""
     if (
         not isinstance(value, list)
@@ -417,7 +417,7 @@ def _field_policy(config: Config, clause: str) -> dict[str, str]:
     return {name: str(value) for name, value in policy.items()}
 
 
-def _number(value: Any) -> bool:
+def _number(value: object) -> bool:
     """Accept finite numeric metadata while excluding booleans, which are integers in Python."""
     return isinstance(value, int | float) and not isinstance(value, bool)
 

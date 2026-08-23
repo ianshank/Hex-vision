@@ -11,6 +11,7 @@ import pytest
 
 from hexvision.config import Config
 from hexvision.errors import PackError
+from hexvision.gates.base import Gate
 from hexvision.packs import registry
 from hexvision.packs.base import Pack, PackMeta, TargetSpec
 from hexvision.packs.registry import available, clear_registered, load, load_all, register
@@ -155,11 +156,11 @@ class _Pack(Pack):
     def meta(self) -> PackMeta:
         return self._meta
 
-    def targets(self, config):  # type: ignore[no-untyped-def]
+    def targets(self, config) -> dict[str, TargetSpec]:  # type: ignore[no-untyped-def]
         del config
         return {"test": TargetSpec("test", ("pytest",))}
 
-    def domain_gates(self, config):  # type: ignore[no-untyped-def]
+    def domain_gates(self, config) -> tuple[Gate, ...]:  # type: ignore[no-untyped-def]
         del config
         return ()
 

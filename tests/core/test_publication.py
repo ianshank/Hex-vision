@@ -259,7 +259,7 @@ def test_publication_blocks_when_decision_log_cannot_be_read(tmp_repo: Any) -> N
 
 
 @pytest.mark.parametrize(
-    "overlay, reason",
+    ("overlay", "reason"),
     [
         (
             "[publication]\ndefault_destination=1\n",

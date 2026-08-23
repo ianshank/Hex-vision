@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any
+
+from hexvision.config import Config, ConfigValue
 
 
-def diagnostic_policy(config: Any, clause: str) -> dict[str, Any]:
+def diagnostic_policy(config: Config, clause: str) -> dict[str, ConfigValue]:
     """Resolve and validate the shared external-command diagnostic policy."""
     keys = {
         "excerpt_max_chars": "robotics.diagnostics.stderr_excerpt_max_chars",
@@ -43,7 +44,7 @@ def diagnostic_policy(config: Any, clause: str) -> dict[str, Any]:
     return policy
 
 
-def redacted_excerpt(value: object, policy: Mapping[str, Any]) -> str:
+def redacted_excerpt(value: object, policy: Mapping[str, ConfigValue]) -> str:
     """Return a bounded secret-redacted diagnostic string."""
     excerpt = str(value)
     for pattern in policy["secret_patterns"]:
@@ -51,6 +52,6 @@ def redacted_excerpt(value: object, policy: Mapping[str, Any]) -> str:
     return excerpt[: int(policy["excerpt_max_chars"])]
 
 
-def command_identity(command: Sequence[object], policy: Mapping[str, Any]) -> str:
+def command_identity(command: Sequence[object], policy: Mapping[str, ConfigValue]) -> str:
     """Return the configured command identity without exposing secret-like arguments."""
     return redacted_excerpt(" ".join(str(part) for part in command), policy)

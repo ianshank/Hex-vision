@@ -7,6 +7,7 @@ model on one Jetson SKU from being represented as safe for every deployment.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any, Final, TypeGuard
 
 from hexvision.config import Config
@@ -121,7 +122,7 @@ class LatencyBudgetGate(Gate):
         unit: str,
         runtime_field: str,
         device_field: str,
-        root: Any,
+        root: Path,
     ) -> tuple[list[Finding], float | None]:
         """Validate one card while preserving headroom even for an over-budget result."""
         location = str(card.path.relative_to(root))
@@ -192,7 +193,7 @@ class LatencyBudgetGate(Gate):
         return [], remaining
 
 
-def _numeric(value: Any) -> TypeGuard[int | float]:
+def _numeric(value: object) -> TypeGuard[int | float]:
     """Identify numeric policy values without allowing boolean metadata to pass as a number."""
     return isinstance(value, int | float) and not isinstance(value, bool)
 

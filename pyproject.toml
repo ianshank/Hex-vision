@@ -128,6 +128,9 @@ select = [
   "PL",       # pylint subset
   "RUF",
   "S",        # bandit security rules
+  "PT",       # pytest test correctness and style
+  "TID",      # import hygiene, including banned relative imports
+  "ANN",      # annotation completeness
 ]
 ignore = [
   # The harness composes shell commands by design (that IS the product); each
@@ -142,13 +145,21 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests assert on failure paths, so `assert` (S101) is the point, and long
 # fixture literals are clearer inline than extracted.
-"tests/**/*.py" = ["S101", "PLR2004", "ARG001"]
+# Pytest injects runtime fixture factories whose concrete callable signatures
+# are not visible to static analysis; these test-only fixture parameters are
+# deliberately exempt while production code remains fully annotated.
+"tests/**/*.py" = ["S101", "PLR2004", "ARG001", "ANN001", "ANN401"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
 warn_unreachable = true
 warn_unused_configs = true
+# Keep these explicit even though current strict mode implies some of them:
+# they protect the intended boundary if mypy changes its strict bundle.
+disallow_any_generics = true
+disallow_any_unimported = true
+disallow_subclassing_any = true
 # An untyped decorator erases the signature of everything it wraps, which is
 # how a "strict" project quietly stops checking its own entry points.
 disallow_untyped_decorators = true
