@@ -22,6 +22,20 @@ A pack supplies its gates from `Pack.domain_gates(config)`. They are normal `Gat
 
 Every gate declares a name and the clause it enforces, accepts a resolved `Config`, and returns a `GateResult`. Escaped `HexVisionError` and unexpected exceptions are converted to structured non-passing results by the runner. Gate implementations should return anticipated policy failures themselves; exceptions are for unavailable or unanticipated conditions that must fail closed.
 
+### Release orchestration
+
+A pack owning its domain surface only helps if something executes it. `hexvision.orchestration` resolves the frozen `orchestration.active_packs` allowlist, loads each named pack, and runs every gate it returns, exposed as `hexvision pack gates --all-active` and `make domain-gates`. Installation alone is therefore not admission: a pack present in the environment but absent from the allowlist is reported as ignored rather than silently executed or silently skipped.
+
+The aggregate result reflects the four-state model rather than flattening it. A `BLOCKED` gate keeps its blocked verdict and reason. A declared absence is resolved against the decision log: with an authorising entry it passes and is listed against that entry in `authorised_declared_skips`, and without one it fails and names its gate in `unauthorised_declared_skips`. The reasoning is recorded as DEC-015; without it the decision log would be decorative, because no release could go green while a documented and owned exception existed.
+
+The configured `contract.pre_pr_order` is the single source of what runs and when. The `make pre-pr` prerequisite list and the CI job graph are derived views of it, and a test asserts all three agree so a gate cannot be enforced locally but omitted in CI.
+
+### Agent and skill governance
+
+`hexvision.agent_validation` applies the same evidence discipline to the repository's own agent and skill definitions. It discovers them from configured directories, validates frontmatter against per-kind schemas, and resolves every referenced file path, Make target, CLI command, and agent or skill cross-reference against the real checkout, parsing the CLI's own argument parser rather than trusting a list. A definition that references a removed target or a renamed command fails.
+
+It reads its own versioned policy file and enumerates no live definitions, so adding an agent requires no test edit, and its output is byte-identical across repeated and shuffled runs so the gate is a deterministic check rather than a report.
+
 ### Invariant verifier registry
 
 Conformance does not trust a claimed invariant mapping merely because it appears in configuration. It loads verifiers from the `hexvision.invariant_verifiers` entry-point group. An `InvariantVerifier` provides:
@@ -100,3 +114,5 @@ The reference implementation is `src/hexvision/packs/jetson.py`, and `examples/j
 ## Authority boundaries
 
 The architecture enforces repository governance rather than operational control. Robotics gates inspect model cards, evaluation records, mission configuration, Git baselines, and configured runners; the safety review does not command a vehicle or certify airworthiness. Human authority is represented only by real rows in the configured decision log. Publication separately composes the shared remote policy with the R-17 `G-PUB` authority check.
+
+One boundary is worth naming because it is easy to assume otherwise: `make` is the invocation authority but not the verdict authority. GNU make reports its own exit status for any failed recipe, so the distinction between `FAILED` and `BLOCKED` does not survive the wrapper. The CLI and its JSON output are where a caller reads a specific verdict, and a test pins this rather than leaving it as folklore.
