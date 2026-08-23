@@ -9,9 +9,11 @@ planned work that can accidentally pass a release gate.
 
 from __future__ import annotations
 
+import ast
 import re
 import subprocess
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
@@ -23,6 +25,15 @@ __all__ = ["check_traceability", "parse_matrix"]
 
 _LOG: Final = get_logger(__name__)
 _CLAUSE: Final = "TRACEABILITY"
+
+
+@dataclass(frozen=True, slots=True)
+class _NodeMarker:
+    """Bind one executable pytest node to its explicit requirement/scenario tags."""
+
+    requirement: str
+    scenarios: tuple[str, ...]
+    location: str
 
 
 def _normal(value: str) -> str:
@@ -68,8 +79,8 @@ def _decision_ids(config: Config) -> set[str]:
     return {match.group(0) for pattern in patterns for match in re.finditer(str(pattern), content)}
 
 
-def _authoritative_requirements(config: Config) -> dict[str, Path]:
-    """Read requirement headings from configured source specification deltas.
+def _authoritative_requirements(config: Config) -> dict[str, tuple[str, ...]]:
+    """Read requirement headings and executable scenarios from source deltas.
 
     The matrix is a projection.  Reading ids from source documents prevents a
     friendly-looking matrix from omitting a released obligation or adding an id
@@ -78,6 +89,18 @@ def _authoritative_requirements(config: Config) -> dict[str, Path]:
     globs = config.require("traceability.authoritative_spec_globs", clause=_CLAUSE)
     heading_pattern = str(
         config.require("traceability.requirement_heading_pattern", clause=_CLAUSE)
+    )
+    scenario_pattern = re.compile(
+        str(config.require("traceability.scenario_heading_pattern", clause=_CLAUSE)),
+        flags=re.MULTILINE,
+    )
+    when_pattern = re.compile(
+        str(config.require("traceability.scenario_when_pattern", clause=_CLAUSE)),
+        flags=re.MULTILINE,
+    )
+    then_pattern = re.compile(
+        str(config.require("traceability.scenario_then_pattern", clause=_CLAUSE)),
+        flags=re.MULTILINE,
     )
     if (
         not isinstance(globs, list)
@@ -93,9 +116,13 @@ def _authoritative_requirements(config: Config) -> dict[str, Path]:
         paths.update(path for path in config.root.glob(glob) if path.is_file())
     if not paths:
         raise ValueError("authoritative specification globs matched no files")
-    requirements: dict[str, Path] = {}
+    if "tag" not in scenario_pattern.groupindex:
+        raise ValueError("scenario heading pattern must define a named 'tag' group")
+    requirements: dict[str, tuple[str, ...]] = {}
     for path in sorted(paths):
-        for match in pattern.finditer(path.read_text(encoding="utf-8")):
+        source = path.read_text(encoding="utf-8")
+        headings = tuple(pattern.finditer(source))
+        for index, match in enumerate(headings):
             requirement = match.group("id")
             existing = requirements.get(requirement)
             if existing is not None:
@@ -103,23 +130,133 @@ def _authoritative_requirements(config: Config) -> dict[str, Path]:
                     f"authoritative requirement {requirement!r} is declared in both "
                     f"{existing} and {path}"
                 )
-            requirements[requirement] = path
+            end = headings[index + 1].start() if index + 1 < len(headings) else len(source)
+            requirement_body = source[match.end() : end]
+            scenarios: list[str] = []
+            scenario_matches = tuple(scenario_pattern.finditer(requirement_body))
+            for scenario_index, scenario in enumerate(scenario_matches):
+                scenario_end = (
+                    scenario_matches[scenario_index + 1].start()
+                    if scenario_index + 1 < len(scenario_matches)
+                    else len(requirement_body)
+                )
+                body = requirement_body[scenario.end() : scenario_end]
+                tag = scenario.group("tag").strip()
+                if not tag or not when_pattern.search(body) or not then_pattern.search(body):
+                    raise ValueError(
+                        f"authoritative scenario {tag!r} for {requirement!r} in {path} "
+                        "must include configured WHEN and THEN clauses"
+                    )
+                scenarios.append(tag)
+            if not scenarios or len(scenarios) != len(set(scenarios)):
+                raise ValueError(
+                    f"authoritative requirement {requirement!r} in {path} has missing or "
+                    "duplicate scenario tags"
+                )
+            requirements[requirement] = tuple(scenarios)
     if not requirements:
         raise ValueError("authoritative specification files declare no requirements")
     return requirements
 
 
-def _test_citations(config: Config, pattern: str, ignored_globs: list[str]) -> set[str]:
-    """Find explicitly marked requirement citations outside approved fixture exclusions."""
+def _node_markers(
+    config: Config, pattern: str, separator: str, ignored_globs: list[str]
+) -> dict[str, tuple[_NodeMarker, ...]]:
+    """Read configured markers from the comment block belonging to each test node."""
+
     tests_path = config.resolve_path("traceability.tests_path", clause=_CLAUSE)
-    cited: set[str] = set()
+    marker = re.compile(pattern)
+    if "requirement" not in marker.groupindex:
+        raise ValueError("test marker pattern must define a named 'requirement' group")
+    by_node: dict[str, tuple[_NodeMarker, ...]] = {}
     for test_file in tests_path.rglob("*.py"):
         relative = test_file.relative_to(config.root)
         if any(relative.match(glob) for glob in ignored_globs):
             continue
         text = test_file.read_text(encoding="utf-8")
-        cited.update(match.group(1) for match in re.finditer(pattern, text))
-    return cited
+        lines = text.splitlines()
+        try:
+            tree = ast.parse(text, filename=str(test_file))
+        except SyntaxError as exc:
+            raise ValueError(f"test evidence source is invalid: {test_file}: {exc}") from exc
+
+        def record(
+            nodes: list[ast.stmt],
+            prefixes: tuple[str, ...] = (),
+            source_lines: list[str] = lines,
+            source_relative: Path = relative,
+        ) -> None:
+            """Record module and class test nodes using pytest's node-id shape."""
+
+            for node in nodes:
+                if isinstance(node, ast.ClassDef):
+                    record(node.body, (*prefixes, node.name))
+                    continue
+                if not isinstance(node, ast.FunctionDef) or not node.name.startswith("test"):
+                    continue
+                # A marker belongs immediately above the test declaration. This
+                # deliberately allows a parametrized test to place its marker
+                # between a multi-line decorator and `def`, where it remains
+                # unambiguous without teaching the parser every decorator grammar.
+                header: list[tuple[int, str]] = []
+                for line_number in range(node.lineno - 1, 0, -1):
+                    line = source_lines[line_number - 1]
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#") or stripped.startswith("@"):
+                        header.append((line_number, line))
+                        continue
+                    break
+                markers: list[_NodeMarker] = []
+                for line_number, line in reversed(header):
+                    match = marker.fullmatch(line)
+                    if match is None:
+                        continue
+                    raw_scenarios = match.groupdict().get("scenarios") or ""
+                    scenarios = tuple(
+                        item.strip() for item in raw_scenarios.split(separator) if item.strip()
+                    )
+                    markers.append(
+                        _NodeMarker(
+                            requirement=match.group("requirement"),
+                            scenarios=scenarios,
+                            location=f"{source_relative.as_posix()}:{line_number}",
+                        )
+                    )
+                node_parts = (source_relative.as_posix(), *prefixes, node.name)
+                by_node["::".join(node_parts)] = tuple(markers)
+
+        record(tree.body)
+    return by_node
+
+
+def _test_markers(
+    config: Config, pattern: str, separator: str, ignored_globs: list[str]
+) -> tuple[_NodeMarker, ...]:
+    """Read every configured marker so orphaned or unknown citations cannot hide."""
+
+    tests_path = config.resolve_path("traceability.tests_path", clause=_CLAUSE)
+    marker = re.compile(pattern)
+    markers: list[_NodeMarker] = []
+    for test_file in tests_path.rglob("*.py"):
+        relative = test_file.relative_to(config.root)
+        if any(relative.match(glob) for glob in ignored_globs):
+            continue
+        source_lines = test_file.read_text(encoding="utf-8").splitlines()
+        for line_number, line in enumerate(source_lines, start=1):
+            match = marker.fullmatch(line)
+            if match is None:
+                continue
+            raw_scenarios = match.groupdict().get("scenarios") or ""
+            markers.append(
+                _NodeMarker(
+                    requirement=match.group("requirement"),
+                    scenarios=tuple(
+                        item.strip() for item in raw_scenarios.split(separator) if item.strip()
+                    ),
+                    location=f"{relative.as_posix()}:{line_number}",
+                )
+            )
+    return tuple(markers)
 
 
 def _collects(config: Config, nodeid: str) -> bool | None:
@@ -150,13 +287,15 @@ def _placeholder(value: str, patterns: tuple[str, ...]) -> bool:
     return any(re.search(pattern, value, flags=re.IGNORECASE) is not None for pattern in patterns)
 
 
-def _verdict(  # noqa: PLR0913 - evidence dimensions remain explicit for audit output.
+def _verdict(  # noqa: PLR0912, PLR0913 - evidence dimensions remain explicit for audit output.
     requirement: str,
     row: Mapping[str, str] | None,
     *,
     release_status: str,
     separator: str,
     placeholders: tuple[str, ...],
+    scenarios: tuple[str, ...],
+    node_markers: Mapping[str, tuple[_NodeMarker, ...]],
     config: Config,
 ) -> tuple[dict[str, Any], list[Finding], bool]:
     """Assess source requirement evidence and retain an auditable per-row verdict."""
@@ -164,6 +303,7 @@ def _verdict(  # noqa: PLR0913 - evidence dimensions remain explicit for audit o
         "status": None,
         "test_node_ids": [],
         "collection": {},
+        "scenario_coverage": [],
         "verdict": "failed",
         "reasons": [],
     }
@@ -227,6 +367,7 @@ def _verdict(  # noqa: PLR0913 - evidence dimensions remain explicit for audit o
         return measurement, findings, False
 
     pytest_unavailable = False
+    covered_scenarios: set[str] = set()
     for nodeid in nodeids:
         collection = _collects(config, nodeid)
         measurement["collection"][nodeid] = collection
@@ -242,6 +383,55 @@ def _verdict(  # noqa: PLR0913 - evidence dimensions remain explicit for audit o
                     f"test node id {nodeid!r} for requirement {requirement!r} does not collect",
                     clause=_CLAUSE,
                     disposition="Correct the node id or restore its test.",
+                )
+            )
+        if row["status"] != release_status:
+            continue
+        matching_markers = tuple(
+            marker for marker in node_markers.get(nodeid, ()) if marker.requirement == requirement
+        )
+        if not matching_markers:
+            measurement["reasons"].append(f"cited node lacks exact marker: {nodeid}")
+            findings.append(
+                Finding(
+                    f"TRACE-{requirement}-MARKER",
+                    Severity.MAJOR,
+                    f"test node id {nodeid!r} lacks exact Traceability marker for {requirement!r}",
+                    clause=_CLAUSE,
+                    disposition=(
+                        "Add the configured requirement marker to this test node's "
+                        "immediate comment/decorator block."
+                    ),
+                )
+            )
+            continue
+        for marker in matching_markers:
+            unknown = set(marker.scenarios) - set(scenarios)
+            if unknown:
+                measurement["reasons"].append(
+                    f"unknown scenario tags at {marker.location}: {', '.join(sorted(unknown))}"
+                )
+            covered_scenarios.update(set(marker.scenarios) & set(scenarios))
+    if row["status"] == release_status:
+        measurement["scenario_coverage"] = sorted(covered_scenarios)
+        missing_scenarios = set(scenarios) - covered_scenarios
+        if missing_scenarios:
+            measurement["reasons"].append(
+                f"uncovered authoritative scenarios: {', '.join(sorted(missing_scenarios))}"
+            )
+            findings.append(
+                Finding(
+                    f"TRACE-{requirement}-SCENARIOS",
+                    Severity.MAJOR,
+                    (
+                        f"requirement {requirement!r} lacks cited scenario coverage for: "
+                        f"{', '.join(sorted(missing_scenarios))}"
+                    ),
+                    clause=_CLAUSE,
+                    disposition=(
+                        "Cite collecting nodes carrying the configured scenario tags for every "
+                        "authoritative WHEN/THEN scenario."
+                    ),
                 )
             )
     if not measurement["reasons"]:
@@ -267,7 +457,10 @@ def check_traceability(  # noqa: PLR0912, PLR0915 - every evidence rule reports 
         decision_patterns = list(
             config.require("traceability.decision_id_patterns", clause=_CLAUSE)
         )
-        citation_pattern = str(config.require("traceability.test_citation_pattern", clause=_CLAUSE))
+        marker_pattern = str(config.require("traceability.test_marker_pattern", clause=_CLAUSE))
+        marker_separator = str(
+            config.require("traceability.test_marker_scenario_separator", clause=_CLAUSE)
+        )
         ignored_test_path_globs = list(
             config.require("traceability.ignored_test_path_globs", clause=_CLAUSE)
         )
@@ -367,6 +560,40 @@ def check_traceability(  # noqa: PLR0912, PLR0915 - every evidence rule reports 
                 disposition="Remove the stale row or add the source requirement specification.",
             )
         )
+    try:
+        node_markers = _node_markers(
+            config, marker_pattern, marker_separator, ignored_test_path_globs
+        )
+        all_markers = _test_markers(
+            config, marker_pattern, marker_separator, ignored_test_path_globs
+        )
+    except (OSError, ValueError, re.error) as exc:
+        return GateResult.blocked(
+            "traceability", summary="test evidence cannot be read", reason=str(exc), clause=_CLAUSE
+        )
+    for marker in all_markers:
+        source_scenarios = authoritative.get(marker.requirement)
+        if source_scenarios is None:
+            continue
+        unknown = set(marker.scenarios) - set(source_scenarios)
+        if unknown:
+            findings.append(
+                Finding(
+                    f"TRACE-{marker.requirement}-SCENARIO-TAG",
+                    Severity.MAJOR,
+                    (
+                        f"test marker at {marker.location} declares scenario tags absent from "
+                        f"authoritative requirement {marker.requirement!r}: "
+                        f"{', '.join(sorted(unknown))}"
+                    ),
+                    marker.location,
+                    _CLAUSE,
+                    (
+                        "Use only configured tags derived from the requirement's "
+                        "WHEN/THEN scenarios."
+                    ),
+                )
+            )
     verdicts: dict[str, dict[str, Any]] = {}
     pytest_unavailable = False
     for requirement in sorted(authoritative_ids):
@@ -376,6 +603,8 @@ def check_traceability(  # noqa: PLR0912, PLR0915 - every evidence rule reports 
             release_status=release_status,
             separator=node_separator,
             placeholders=placeholders,
+            scenarios=authoritative[requirement],
+            node_markers=node_markers,
             config=config,
         )
         verdicts[requirement] = verdict
@@ -389,12 +618,7 @@ def check_traceability(  # noqa: PLR0912, PLR0915 - every evidence rule reports 
             clause=_CLAUSE,
             measurements={"requirements": verdicts, "rows": len(rows)},
         )
-    try:
-        cited = _test_citations(config, citation_pattern, ignored_test_path_globs)
-    except (OSError, re.error) as exc:
-        return GateResult.blocked(
-            "traceability", summary="test evidence cannot be read", reason=str(exc), clause=_CLAUSE
-        )
+    cited = {marker.requirement for marker in all_markers}
     for requirement in sorted(cited - authoritative_ids):
         findings.append(
             Finding(

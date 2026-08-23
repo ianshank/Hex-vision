@@ -12,7 +12,7 @@ from hexvision.gates.model import GateStatus, Severity
 from hexvision.robotics.determinism import DeterminismGate
 
 
-# Traceability: R-12
+# Traceability: R-12 [Reproducible runs, Missing or inconsistent runs]
 def test_determinism_passes_with_identical_seeds(passing_repo: Any) -> None:
     """Matching results only count after every seed is confirmed identical."""
     root = passing_repo()

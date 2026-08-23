@@ -28,16 +28,36 @@ SOURCE="$ROOT/scripts/pre_push_scan.sh"
 HOOK_DIR="$(git -C "$ROOT" rev-parse --path-format=absolute --git-path hooks)" || { echo "install_hooks: cannot resolve hooks directory" >&2; exit 1; }
 mkdir -p "$HOOK_DIR"
 DESTINATION="$HOOK_DIR/pre-push"
-if [ -e "$DESTINATION" ] && ! grep -q 'scripts/pre_push_scan.sh' "$DESTINATION" 2>/dev/null; then
+if [ -e "$DESTINATION" ] && ! grep -q '^# hexvision-governed-pre-push$' "$DESTINATION" 2>/dev/null; then
   BACKUP="$DESTINATION.pre-hex-vision.$(date +%Y%m%d%H%M%S)"
   cp "$DESTINATION" "$BACKUP"
   echo "install_hooks: preserved unrelated pre-push hook at $BACKUP" >&2
 fi
 cat > "$DESTINATION" <<HOOK
 #!/usr/bin/env bash
-# Installed by Hex-vision; edit scripts/pre_push_scan.sh in the worktree.
+# hexvision-governed-pre-push
+# Installed by Hex-vision; invokes the worktree's governed Makefile target.
 set -u
-exec bash "$ROOT/scripts/pre_push_scan.sh" "\$@"
+block() {
+  echo "BLOCKED (INV-3): \$1" >&2
+  exit 2
+}
+[ "\$#" -ge 2 ] || block "pre-push invocation is missing <remote-name> <remote-url>"
+REMOTE_URL="\$2"
+if [ -x "$ROOT/.venv/bin/python" ]; then
+  RUNNER="$ROOT/.venv/bin/python"
+elif command -v uv >/dev/null 2>&1; then
+  RUNNER="uv run --project $ROOT"
+else
+  block "no project Python or uv runner is available for the shared normalizer"
+fi
+config_count="\${GIT_CONFIG_COUNT:-0}"
+exec env \\
+  "GIT_CONFIG_COUNT=\$((config_count + 1))" \\
+  "GIT_CONFIG_KEY_\$config_count=remote.hexvision_guard.pushurl" \\
+  "GIT_CONFIG_VALUE_\$config_count=\$REMOTE_URL" \\
+  RUN="\$RUNNER" \\
+  make -C "$ROOT" remotes
 HOOK
 chmod +x "$DESTINATION"
 printf '%s\n' "install_hooks: installed pre-push hook at $DESTINATION"

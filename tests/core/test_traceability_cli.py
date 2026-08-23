@@ -21,11 +21,17 @@ def _trace_repo(root: Path, matrix_rows: str, requirements: tuple[str, ...] = ("
     spec = root / "openspec" / "changes" / "demo" / "specs"
     spec.mkdir(parents=True)
     headings = "\n".join(
-        f"### Requirement: {item} — Demonstrable evidence" for item in requirements
+        (
+            f"### Requirement: {item} — Demonstrable evidence\n\n"
+            "#### Scenario: Example scenario\n"
+            "- **WHEN** evidence is declared\n"
+            "- **THEN** it is checked\n"
+        )
+        for item in requirements
     )
     (spec / "traceability.md").write_text(f"# Demo\n\n{headings}\n", encoding="utf-8")
     (root / "docs" / "decision-log.md").write_text("DEC-1\n", encoding="utf-8")
-    markers = "\n".join(f"# Traceability: {item}" for item in requirements)
+    markers = "\n".join(f"# Traceability: {item} [Example scenario]" for item in requirements)
     (root / "tests" / "test_sample.py").write_text(
         f"{markers}\n\ndef test_ok() -> None:\n    assert True\n", encoding="utf-8"
     )
@@ -68,7 +74,7 @@ def test_traceability_clean_case(make_config: Any, tmp_repo: Any) -> None:
     assert result.measurements["requirements"]["R-1"]["verdict"] == "verified"
 
 
-# Traceability: R-5
+# Traceability: R-5 [Missing or duplicate requirement row, Inherited or waived row authority]
 def test_traceability_requires_exact_source_requirement_set(
     make_config: Any, tmp_repo: Any
 ) -> None:
@@ -86,7 +92,7 @@ def test_traceability_requires_exact_source_requirement_set(
     assert result.measurements["requirements"]["R-2"]["reasons"] == ["missing matrix row"]
 
 
-# Traceability: R-6
+# Traceability: R-6 [Collecting Green node, Noncollecting Green node]
 def test_traceability_requires_collecting_node_and_test_marker(
     make_config: Any, tmp_repo: Any
 ) -> None:
@@ -99,6 +105,47 @@ def test_traceability_requires_collecting_node_and_test_marker(
     result = check_traceability(make_config(root))
     assert result.status.value == "failed"
     assert {finding.id for finding in result.findings} >= {"TRACE-R-1-TEST", "TRACE-R-1-CITATION"}
+
+
+def test_traceability_rejects_a_cited_node_with_another_requirement_marker(
+    make_config: Any, tmp_repo: Any
+) -> None:
+    """A marker elsewhere in source cannot satisfy the matrix node's exact requirement claim."""
+
+    root = tmp_repo()
+    _trace_repo(root, "| R-1 | s | Green | tests/test_sample.py::test_ok | | | |\n")
+    (root / "tests" / "test_sample.py").write_text(
+        ("# Traceability: R-2 [Example scenario]\n\ndef test_ok() -> None:\n    assert True\n"),
+        encoding="utf-8",
+    )
+
+    result = check_traceability(make_config(root))
+
+    assert result.status.value == "failed"
+    assert any(
+        finding.id == "TRACE-R-1-MARKER"
+        and "lacks exact Traceability marker for 'R-1'" in finding.message
+        for finding in result.findings
+    )
+
+
+def test_traceability_rejects_a_cited_unknown_scenario_tag(make_config: Any, tmp_repo: Any) -> None:
+    """A self-authored tag outside the source WHEN/THEN set is a specific evidence failure."""
+
+    root = tmp_repo()
+    _trace_repo(root, "| R-1 | s | Green | tests/test_sample.py::test_ok | | | |\n")
+    (root / "tests" / "test_sample.py").write_text(
+        ("# Traceability: R-1 [Counterfeit scenario]\n\ndef test_ok() -> None:\n    assert True\n"),
+        encoding="utf-8",
+    )
+
+    result = check_traceability(make_config(root))
+
+    assert result.status.value == "failed"
+    assert any(
+        finding.id == "TRACE-R-1-SCENARIO-TAG" and "Counterfeit scenario" in finding.message
+        for finding in result.findings
+    )
 
 
 def test_traceability_ignores_only_configured_validator_fixture(

@@ -61,11 +61,18 @@ def test_green_traceability_collection_paths(
     spec = root / "openspec" / "changes" / "demo" / "specs"
     spec.mkdir(parents=True)
     (spec / "traceability.md").write_text(
-        "### Requirement: R-1 — Example requirement\n", encoding="utf-8"
+        (
+            "### Requirement: R-1 — Example requirement\n\n"
+            "#### Scenario: Example scenario\n"
+            "- **WHEN** evidence is declared\n"
+            "- **THEN** it is checked\n"
+        ),
+        encoding="utf-8",
     )
     (root / "docs" / "decision-log.md").write_text("DEC-1\n", encoding="utf-8")
     (root / "tests" / "test_x.py").write_text(
-        "# Traceability: R-1\n\ndef test_x() -> None:\n    assert True\n", encoding="utf-8"
+        ("# Traceability: R-1 [Example scenario]\n\ndef test_x() -> None:\n    assert True\n"),
+        encoding="utf-8",
     )
     (root / "traceability" / "REQUIREMENT-TRACEABILITY.md").write_text(
         "| requirement id | statement | status | test node id "

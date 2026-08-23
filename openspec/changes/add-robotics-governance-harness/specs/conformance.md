@@ -31,6 +31,10 @@ The system SHALL include untested source files and enforce configured per-file l
 - **WHEN** a coverage report contains one source file below a configured line or branch floor
 - **THEN** `CoverageFloorGate` SHALL fail and report that file and its measured values.
 
+#### Scenario: Untested source file
+- **WHEN** coverage runs with a real Python source file that no test imports
+- **THEN** the report SHALL include that file and the configured per-file floor SHALL apply.
+
 #### Scenario: Coverage report unavailable
 - **WHEN** the configured coverage report is absent or unparseable
 - **THEN** `CoverageFloorGate` SHALL return `BLOCKED`, never a pass.

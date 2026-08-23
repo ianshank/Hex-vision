@@ -20,7 +20,7 @@ def _publication_repo(root: Path, decision_log: str = "") -> None:
     (docs / "decision-log.md").write_text(decision_log, encoding="utf-8")
 
 
-# Traceability: R-17
+# Traceability: R-17 [Publication gate absent, Publication gate and allowlist present]
 def test_publication_blocks_without_g_pub_authorization(tmp_repo: Any) -> None:
     """An approved destination still cannot publish before its named gate is recorded."""
     root = tmp_repo('[remotes]\nallowlist=["github.com/acme/release"]\n')
@@ -37,7 +37,7 @@ def test_publication_blocks_without_g_pub_authorization(tmp_repo: Any) -> None:
     )
 
 
-# Traceability: R-17
+# Traceability: R-17 [Publication gate and allowlist present]
 def test_publication_rejects_unallowlisted_destination_despite_g_pub(tmp_repo: Any) -> None:
     """Decision authority cannot override the shared destination allowlist."""
     root = tmp_repo('[remotes]\nallowlist=["github.com/acme/release"]\n')
@@ -54,7 +54,7 @@ def test_publication_rejects_unallowlisted_destination_despite_g_pub(tmp_repo: A
     )
 
 
-# Traceability: R-17
+# Traceability: R-17 [Publication gate and allowlist present]
 def test_publication_rejects_credential_destination_with_normalizer_reason(tmp_repo: Any) -> None:
     """Credentials cannot be discarded before the shared normalizer records their reason."""
     root = tmp_repo('[remotes]\nallowlist=["github.com/acme/release"]\n')
@@ -71,7 +71,7 @@ def test_publication_rejects_credential_destination_with_normalizer_reason(tmp_r
     )
 
 
-# Traceability: R-17
+# Traceability: R-17 [Publication gate and allowlist present]
 def test_publication_permits_normalized_allowlisted_destination_with_g_pub(tmp_repo: Any) -> None:
     """Publication proceeds only when both independently governed conditions hold."""
     root = tmp_repo('[remotes]\nallowlist=["github.com/acme/release"]\n')

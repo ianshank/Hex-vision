@@ -11,7 +11,7 @@ from hexvision.gates.model import GateStatus, Severity
 from hexvision.robotics.model_card import ModelCardGate, parse_front_matter
 
 
-# Traceability: R-10
+# Traceability: R-10 [Complete paired model card, Unreviewable model evidence]
 def test_model_card_passes_for_complete_card(passing_repo: Any) -> None:
     """A complete card and its artifact produce a green provenance record."""
     root = passing_repo()

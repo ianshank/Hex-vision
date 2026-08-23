@@ -113,7 +113,7 @@ secrets: ## Secret scan of working tree AND history. Fails closed if gitleaks is
 	    printf 'gitleaks identity verification failed: expected version %s, observed %s\n' \
 	      "$(GITLEAKS_RELEASE_VERSION)" "$${observed:-<no version output>}"; \
 	    exit 1; }
-	$(GITLEAKS) dir $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
+	$(GITLEAKS) dir $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner $(if $(GITLEAKS_REPORT),--report-format json --report-path $(GITLEAKS_REPORT))
 	$(GITLEAKS) git $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
 
 secrets-install: ## Install pinned gitleaks (Go when available, verified release binary otherwise)

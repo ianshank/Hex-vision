@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,8 @@ from hexvision.gates.model import GateResult
 from hexvision.invariant_verifiers import (
     InvariantVerifier,
     ProbeEvidence,
+    _result_payload,
+    _secret_records,
     clear_registered,
     register,
 )
@@ -94,7 +97,7 @@ class _Conforming(Pack):
     def meta(self) -> PackMeta:
         return PackMeta("fake", "test", "test")
 
-    def targets(self, config):  # type: ignore[no-untyped-def]
+    def targets(self, config: Config) -> dict[str, TargetSpec]:
         names = config.require("contract.targets")
         specs = {name: TargetSpec(name, ("make", name)) for name in names}
         specs["pre-pr"] = TargetSpec("pre-pr", ("make", "pre-pr"))
@@ -132,7 +135,10 @@ def _prepare_contract_evidence(root, config, *, reordered: bool = False) -> None
     if reordered:
         order.reverse()
     makefile = root / str(config.require("contract.makefile_path"))
-    makefile.write_text(f"pre-pr: {' '.join(order)}\n", encoding="utf-8")
+    declared = "\n".join(
+        f"{target}:" for target in config.require("contract.targets") if target != "pre-pr"
+    )
+    makefile.write_text(f"{declared}\npre-pr: {' '.join(order)}\n", encoding="utf-8")
 
 
 def test_makefile_prerequisites_preserves_continuation_order(tmp_path: Path) -> None:
@@ -146,7 +152,43 @@ def test_makefile_prerequisites_preserves_continuation_order(tmp_path: Path) -> 
     assert _makefile_prerequisites(makefile, "missing") is None
 
 
-# Traceability: R-8
+def test_makefile_prerequisites_retains_an_unterminated_continuation(tmp_path: Path) -> None:
+    """A truncated Makefile declaration is still interpreted deterministically."""
+
+    makefile = tmp_path / "Makefile"
+    makefile.write_text("pre-pr: install lint \\\n", encoding="utf-8")
+
+    assert _makefile_prerequisites(makefile, "pre-pr") == ("install", "lint")
+
+
+def test_structured_probe_parsers_reject_incomplete_artifacts(tmp_path: Path) -> None:
+    """Evidence parsers reject prose, malformed JSON, and incomplete scanner records."""
+
+    report = tmp_path / "gitleaks.json"
+    assert _result_payload("human prose\n[]\n") is None
+    assert _result_payload('human prose\n{"status": "failed"}\n') == {"status": "failed"}
+    assert _secret_records(report, "RuleID", ("File", "StartLine")) is None
+
+    report.write_text("{}", encoding="utf-8")
+    assert _secret_records(report, "RuleID", ("File", "StartLine")) is None
+    report.write_text("[]", encoding="utf-8")
+    assert _secret_records(report, "RuleID", ("File", "StartLine")) is None
+    report.write_text(
+        json.dumps([{"RuleID": "", "File": "probe.py", "StartLine": 1}]),
+        encoding="utf-8",
+    )
+    assert _secret_records(report, "RuleID", ("File", "StartLine")) is None
+
+    report.write_text(
+        json.dumps([{"RuleID": "generic-api-key", "File": "probe.py", "StartLine": 1}]),
+        encoding="utf-8",
+    )
+    assert _secret_records(report, "RuleID", ("File", "StartLine")) == (
+        {"RuleID": "generic-api-key", "File": "probe.py", "StartLine": 1},
+    )
+
+
+# Traceability: R-8 [Valid Jetson pack, Contract violation]
 def test_conformance_clean(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """Domain gates need not fake claims for invariants enforced by core controls."""
     root = tmp_repo()
@@ -181,6 +223,45 @@ def test_conformance_rejects_the_reviewers_no_op_lie_pack(make_config, tmp_repo)
         "INV-1" in finding.message and "probe was not detected" in finding.message
         for finding in result.findings
     )
+
+
+def test_conformance_rejects_counterfeit_commands_without_the_no_op_backstop(
+    make_config: Callable[..., Config], tmp_repo: Callable[..., Path]
+) -> None:
+    """Counterfeit stdout cannot pass when the configured no-op denylist is empty."""
+
+    root = tmp_repo("[contract.conformance]\nno_op_commands=[]\n")
+    config = make_config(root)
+    _prepare_contract_evidence(root, config)
+
+    @dataclass
+    class CounterfeitPack(_Conforming):
+        """Reproduce the review mutation using plausible output instead of enforcement."""
+
+        def targets(self, config: Config) -> dict[str, TargetSpec]:
+            specs = dict(super().targets(config))
+            specs["secrets"] = TargetSpec("secrets", ("sh", "-c", "echo leaks found; exit 1"))
+            specs["remotes"] = TargetSpec(
+                "remotes", ("sh", "-c", "echo unapproved destination; exit 1")
+            )
+            specs["install"] = TargetSpec(
+                "install",
+                (
+                    "sh",
+                    "-c",
+                    "mkdir -p .git/hooks; echo pre_push_scan.sh > .git/hooks/pre-push; "
+                    "echo installed pre-push hook; exit 0",
+                ),
+            )
+            return specs
+
+    result = check_pack(config, CounterfeitPack())
+
+    assert result.status.value == "failed"
+    messages = [finding.message for finding in result.findings]
+    expected_detail = "not the configured Makefile executable invoking its real governed target"
+    for invariant in ("INV-1", "INV-3", "INV-4"):
+        assert any(invariant in message and expected_detail in message for message in messages)
 
 
 def test_conformance_rejects_a_mapping_without_a_registered_behavioral_verifier(

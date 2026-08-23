@@ -35,7 +35,7 @@ def _module(root) -> None:  # type: ignore[no-untyped-def]
     )
 
 
-# Traceability: R-7
+# Traceability: R-7 [Stable source data, Drift or malformed data module]
 def test_projection_write_check_and_drift(make_config, tmp_repo, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """Generated files round-trip and an edit is detected byte-for-byte."""
     root = tmp_repo(
@@ -76,7 +76,7 @@ def test_projection_loads_repo_data_module_without_pythonpath(make_config, tmp_r
     assert check_projections(make_config(root), write=True).status.value == "passed"
 
 
-# Traceability: R-18
+# Traceability: R-18 [One file below the floor]
 def test_coverage_gate_reports_each_floor(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """Line and branch deficits are both reported rather than stopping at one file."""
     root = tmp_repo()
@@ -116,6 +116,7 @@ def test_branch_percentage_supports_current_and_legacy_coverage_json() -> None:
     assert _branch_percentage({"percent_covered_branches": 75}) == 75
 
 
+# Traceability: R-18 [Coverage report unavailable]
 def test_coverage_gate_blocks_missing_report(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """Coverage evidence absence is distinct from a measured quality failure."""
     assert CoverageFloorGate().check(make_config(tmp_repo(), None)).status.value == "blocked"

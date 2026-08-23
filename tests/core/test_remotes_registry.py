@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import ClassVar
 
 import pytest
 
+from hexvision.config import Config
 from hexvision.errors import PackError
 from hexvision.packs import registry
 from hexvision.packs.base import Pack, PackMeta, TargetSpec
@@ -28,7 +31,7 @@ from tests.support.process import coverage_controls_sanitized, run_process
         "git@github.com:org/repo\r",
     ],
 )
-# Traceability: R-3
+# Traceability: R-3 [Equivalent GitHub spellings, Credential-bearing remote]
 def test_remote_spellings_normalize(raw: str) -> None:
     """All Git spellings compare as one policy destination."""
     result = normalize_remote_url(raw)
@@ -84,13 +87,51 @@ def test_more_invalid_remote_forms_block(raw: str) -> None:
     assert normalize_remote_url(raw).is_blocked
 
 
-# Traceability: R-4
+# Traceability: R-4 [Empty allowlist]
 def test_remote_policy_empty_allowlist_blocks(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """A missing destination policy must not become an allow-all rule."""
     config = make_config(tmp_repo("[remotes]\nallowlist=[]\n"))
     assert check_remotes(config, ["github.com/org/repo"]).status.value == "blocked"
 
 
+# Traceability: R-4 [Unreadable remote inspection]
+def test_remote_policy_blocks_when_git_cannot_be_invoked(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """A configured but unavailable Git executable leaves remote evidence unreadable and blocked."""
+
+    config = make_config(
+        tmp_repo("[remotes]\nallowlist=['github.com/org/repo']\ngit_executable='missing-git'\n")
+    )
+    result = check_remotes(config)
+    assert result.status.value == "blocked"
+    assert result.summary == "remote inspection could not start"
+    assert "cannot execute configured git command" in result.findings[0].message
+
+
+# Traceability: R-4 [Invalid remote destination]
+def test_remote_policy_rejects_an_invalid_discovered_destination(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """A malformed remote is a concrete failed check with the parser's precise reason."""
+
+    config = make_config(tmp_repo("[remotes]\nallowlist=['github.com/org/repo']\n"))
+    result = check_remotes(config, ["https://github.com"])
+    assert result.status.value == "failed"
+    assert result.findings[0].message.endswith(
+        "remote URL must include both host and repository path"
+    )
+
+
+# Traceability: R-4 [Unallowlisted destination]
+def test_remote_policy_rejects_a_normalized_unallowlisted_destination(
+    make_config: Callable[..., Config], tmp_repo: Callable[..., Path]
+) -> None:
+    """A valid but unapproved destination cannot inherit approval from another remote."""
+
+    config = make_config(tmp_repo("[remotes]\nallowlist=['github.com/org/repo']\n"))
+    result = check_remotes(config, ["https://github.com/other/repo.git"])
+    assert result.status.value == "failed"
+    assert "github.com/other/repo" in result.findings[0].message
+
+
+# Traceability: R-4 [Allowlisted destination]
 def test_remote_policy_accepts_allowed(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """A normal configured destination passes policy comparison."""
     config = make_config(tmp_repo("[remotes]\nallowlist=['github.com/org/repo']\n"))
