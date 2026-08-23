@@ -9,19 +9,25 @@ This module is the corrective action: every consumer resolves authority through
 gate constructs itself, and conformance rejects any construction site outside
 this file.
 
-Two honesty notes are deliberate parts of the contract. First, the construction
-guard defends against *accidental* re-implementation — the defect class that
-actually recurred — not against adversarial forgery: Python permits
+Three honesty notes are deliberate parts of the contract. First, the
+construction guard defends against *accidental* re-implementation — the defect
+class that actually recurred — not against adversarial forgery: Python permits
 ``object.__new__`` bypasses, which the conformance AST heuristic flags in its
 direct spelling but cannot see through an assignment alias, and which the
 runtime cannot prevent. Second, verification failure is a typed denial while an
 unreadable or misconfigured ledger *raises*: a verifier that could not look must
-surface as BLOCKED at its caller, never as a quiet "not authorized".
+surface as BLOCKED at its caller, never as a quiet "not authorized". Third, the
+guard binds construction, not provenance: this is a public function, so a caller
+that resolves a configuration rooted elsewhere can mint genuine authority from a
+ledger the release under review never saw. Binding minted authority to the
+resolved ledger's identity is recorded follow-up work in the change's deferred
+remediation register, not an implied property of this module.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Final
@@ -36,9 +42,11 @@ from hexvision.decision_log import (
 from hexvision.observability import get_logger
 
 __all__ = [
+    "SUBJECT_SEPARATOR",
     "AuthorityDenial",
     "DenialReason",
     "VerifiedAuthority",
+    "joined_decision_ids",
     "verify_authority",
 ]
 
@@ -47,6 +55,16 @@ _LOG: Final = get_logger(__name__)
 #: any ``VerifiedAuthority(...)`` call site outside this module, and this token
 #: turns an accidental in-process construction into an immediate TypeError.
 _CONSTRUCTION_TOKEN: Final = object()
+#: Separator between the gate segment and the runner segment of a subject, e.g.
+#: ``"hardware-in-loop:hil_smoke"``. Producers construct subjects as
+#: ``<gate><separator><runner>``, and release aggregation requires an attached
+#: authority's subject to exactly equal the producing gate's name, this
+#: separator, and the runner key it is attached under — no prefix matching, no
+#: whole-gate wildcard. A gate whose own name contains the separator is refused
+#: outright, because its recorded subjects would be ambiguous between gates.
+#: That is the enforcement of the "no separator in gate names" invariant: not a
+#: naming convention, an unauthorizable state.
+SUBJECT_SEPARATOR: Final = ":"
 
 
 class DenialReason(Enum):
@@ -233,6 +251,18 @@ def verify_authority(  # noqa: PLR0911 - each denial reason reports independentl
         clause=clause,
         _token=_CONSTRUCTION_TOKEN,
     )
+
+
+def joined_decision_ids(authorities: Mapping[str, VerifiedAuthority]) -> str:
+    """Render one display string from attached authorities, in attachment order.
+
+    This is the single reconciliation point between the typed authority mapping
+    consumers trust and the comma-joined ``decision_id`` measurement they
+    display. A second join spelled elsewhere could disagree on order or
+    separator, which is exactly the parallel-shapes drift DEC-016 exists to
+    prevent.
+    """
+    return ",".join(authority.decision_id for authority in authorities.values())
 
 
 def _denial(subject: str, reason: DenialReason, detail: str) -> AuthorityDenial:
