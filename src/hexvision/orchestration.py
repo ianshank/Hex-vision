@@ -9,12 +9,13 @@ reviewed third-party pack to join without a core import-list edit.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
+from hexvision.authority import SUBJECT_SEPARATOR, VerifiedAuthority, joined_decision_ids
 from hexvision.config import Config
 from hexvision.gates.base import Gate, run_gates
-from hexvision.gates.model import Finding, GateResult, GateStatus
+from hexvision.gates.model import Finding, GateResult, GateStatus, Severity
 from hexvision.observability import get_logger, log_verdict
 from hexvision.packs.base import Pack
 from hexvision.packs.registry import available, load_all
@@ -86,6 +87,62 @@ def _failure_findings(results: Sequence[tuple[str, GateResult]]) -> tuple[Findin
     return tuple(findings)
 
 
+def _skip_authority_problem(result: GateResult) -> str | None:
+    """Explain why a declared skip's attached authority is untrusted, or ``None``.
+
+    Trust comes only from typed :class:`VerifiedAuthority` values minted by the
+    shared verifier — never from a ``decision_id`` string in measurements, which
+    is the display shape and was the forgeable surface the PEER-REVIEW-3 exploit
+    spent. Each attached authority's subject must exactly equal the producing
+    gate's name, the subject separator, and the runner key it is attached under,
+    so authority recorded for one gate or runner cannot be borrowed by another
+    and a whole-gate or empty-runner subject is never a wildcard. A gate whose
+    own name contains the separator is refused outright: its recorded subjects
+    would be ambiguous between gates, so it can never be authorised (fail
+    closed by construction). Subjects are deliberately not pack-scoped — one
+    active pack today — which is a recorded residual bound, not an oversight.
+    """
+    authorities = result.declared_skip_authority
+    if not authorities:
+        return "no verified authority is attached to the declared skip"
+    if SUBJECT_SEPARATOR in result.gate:
+        return (
+            f"gate name contains the subject separator {SUBJECT_SEPARATOR!r}, "
+            "making its recorded subjects ambiguous; it can never be authorised"
+        )
+    fakes = sorted(
+        key for key, value in authorities.items() if not isinstance(value, VerifiedAuthority)
+    )
+    if fakes:
+        return f"attached authority is not verifier-minted for: {', '.join(fakes)}"
+    mismatched = sorted(
+        f"{key} -> {value.subject}"
+        for key, value in authorities.items()
+        if value.subject != f"{result.gate}{SUBJECT_SEPARATOR}{key}"
+    )
+    if mismatched:
+        return "verified authority does not name this gate and runner: " + ", ".join(mismatched)
+    return None
+
+
+def _unverified_skip_findings(problems: Mapping[str, str]) -> tuple[Finding, ...]:
+    """Name every unverified declared skip so the failure is actionable, not a bare exit."""
+    return tuple(
+        Finding(
+            id=f"{name.replace('/', '-').upper()}-UNVERIFIED-SKIP",
+            severity=Severity.BLOCKER,
+            message=f"[{name}] declared skip is not authorised: {problem}",
+            clause=_CLAUSE,
+            disposition=(
+                "Resolve the absence through hexvision.authority.verify_authority and "
+                "attach the returned authority to the declared-skip result, or restore "
+                "the runner."
+            ),
+        )
+        for name, problem in sorted(problems.items())
+    )
+
+
 def _block_reason(results: Sequence[tuple[str, GateResult]]) -> str:
     """Summarize every blocked gate reason without relabeling it as a failure."""
     messages = [
@@ -131,28 +188,48 @@ def _aggregate(
     if declared:
         # GateStatus.SKIPPED_DECLARED maps to the FAILED exit code by default so an
         # unowned skip is red unless something converts it. The converting authority
-        # is the decision-log entry, and per that mapping's own documentation the
-        # conversion belongs to the gate rather than to the mapping. A skip whose
-        # authority is missing is now reported BLOCKED by the producing gate, so
-        # anything still declared here is authorised. The unauthorised branch below
-        # remains as a defence against a future gate that forgets to resolve
-        # authority: it names the offending gate instead of emitting a bare
-        # non-zero exit that an operator would have to guess at.
-        unauthorised = [
-            f"{pack_name}/{result.gate}"
+        # is the typed VerifiedAuthority the producing gate resolved through the
+        # shared verifier (DEC-016) — never the decision_id measurement, which is
+        # derived display data a gate could once forge with any non-empty string.
+        # A skip whose authority is missing is reported BLOCKED by the producing
+        # gate, so anything still declared here should carry authority. The
+        # unverified branch below is the defence against a gate that forgets to
+        # resolve it, forges a bare id, or borrows another gate's decision: it
+        # names the offending gate and the exact problem instead of emitting a
+        # bare non-zero exit that an operator would have to guess at.
+        problems = {
+            f"{pack_name}/{result.gate}": problem
             for pack_name, result in declared
-            if not result.measurements.get("decision_id")
-        ]
-        if unauthorised:
+            if (problem := _skip_authority_problem(result)) is not None
+        }
+        if problems:
             return GateResult.failed(
                 _GATE_NAME,
-                summary="a declared domain-gate skip carries no authorising decision",
+                summary="a declared domain-gate skip carries no verified authority",
+                findings=(*findings, *_unverified_skip_findings(problems)),
+                clause=_CLAUSE,
+                measurements={**measurements, "unauthorised_declared_skips": sorted(problems)},
+            )
+        # Authorised absence converts the skip, not the evidence around it: a
+        # declared result that also carries blocking findings (a present runner
+        # failed while another was authorised absent) must not ride the
+        # conversion into a green release verdict with its Major finding buried
+        # in nested measurements.
+        degraded = sorted(
+            f"{pack_name}/{result.gate}"
+            for pack_name, result in declared
+            if result.blocking_findings
+        )
+        if degraded:
+            return GateResult.failed(
+                _GATE_NAME,
+                summary="a declared domain-gate skip carries blocking findings",
                 findings=findings,
                 clause=_CLAUSE,
-                measurements={**measurements, "unauthorised_declared_skips": unauthorised},
+                measurements={**measurements, "degraded_declared_skips": degraded},
             )
         authorised = {
-            f"{pack_name}/{result.gate}": result.measurements["decision_id"]
+            f"{pack_name}/{result.gate}": joined_decision_ids(result.declared_skip_authority or {})
             for pack_name, result in declared
         }
         return GateResult.passed(

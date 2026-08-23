@@ -20,6 +20,7 @@ what keeps them unit-testable without a repository on disk.
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from abc import ABC, abstractmethod
 from typing import Final
@@ -157,12 +158,13 @@ def run_gate(gate: Gate, config: Config) -> GateResult:
             measurements=elapsed(),
         )
     else:
-        result = GateResult(
-            gate=result.gate,
-            status=result.status,
+        # Structural rebuild, not a hand-maintained field list: replace() carries
+        # every other field forward automatically, so a future GateResult field
+        # cannot be silently dropped here — the per-site fragility that produced
+        # three independent authority re-implementations (DEC-016).
+        result = dataclasses.replace(
+            result,
             clause=result.clause or gate.clause,
-            summary=result.summary,
-            findings=result.findings,
             measurements={**dict(result.measurements), **elapsed()},
         )
 

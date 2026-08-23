@@ -549,13 +549,15 @@ command_decode_errors = "replace"
 # absence rather than an invisible one.
 optional_gates = ["hil_smoke", "sitl_mission"]
 # When the runner is absent the result is `skipped-declared`, which the
-# conformance suite treats as a failure unless a decision-log entry names it.
-# Absence always requires that explicit decision; it is intentionally not a
-# toggle because an unreviewed missing physical-validation runner is not clean
-# evidence.
+# conformance suite treats as a failure unless a decision-log record authorizes
+# it. Absence authority resolves through the shared verifier (DEC-016) by exact
+# equality on the subject `hardware-in-loop:<runner>`, using the frozen
+# `decision_log` grammar and `traceability.decision_id_patterns` — this table
+# deliberately declares no private ledger path or identifier grammar, so the
+# gate cannot drift onto its own authority parsing again. Absence always
+# requires that explicit decision; it is intentionally not a toggle because an
+# unreviewed missing physical-validation runner is not clean evidence.
 runners = { hil_smoke = ["hexvision-hil-smoke"], sitl_mission = ["hexvision-sitl-mission"] }
-decision_log_path = "docs/decision-log.md"
-decision_id_pattern = "DEC-[0-9]+"
 timeout_seconds = 300
 
 

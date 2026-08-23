@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from collections.abc import Generator, Mapping, Sequence
@@ -12,6 +13,7 @@ from typing import Any, cast
 import pytest
 
 from hexvision import cli
+from hexvision.authority import VerifiedAuthority, verify_authority
 from hexvision.config import Config, load_config
 from hexvision.gates.base import Gate
 from hexvision.gates.model import Finding, GateResult, GateStatus, Severity
@@ -79,6 +81,16 @@ def _config(tmp_repo: Any, active: str) -> Config:
     """Create a reviewed repository overlay selecting exactly one test pack."""
     root = tmp_repo(f'[orchestration]\nactive_packs = ["{active}"]\n')
     return load_config(root=root, env={})
+
+
+def _minted_authority(root: Path, subject: str, *rows: str) -> VerifiedAuthority:
+    """Record decisions in the isolated ledger and mint authority for one subject."""
+    docs = root / "docs"
+    docs.mkdir(exist_ok=True)
+    (docs / "decision-log.md").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    authority = verify_authority(load_config(root=root, env={}), subject=subject)
+    assert isinstance(authority, VerifiedAuthority)
+    return authority
 
 
 def _failed(gate: str, finding_id: str, reason: str) -> GateResult:
@@ -257,9 +269,9 @@ def test_all_passing_active_domain_gates_produce_a_passing_release_verdict(tmp_r
     assert result.summary == "every active pack domain gate passed"
 
 
-# Traceability: R-19 [Unavailable domain gate evidence]
+# Traceability: R-19 [Declared skip trusts only verified authority]
 def test_authorised_declared_absence_passes_but_stays_visible(tmp_repo: Any) -> None:
-    """A declared absence with a recorded decision passes, and names its authority.
+    """A declared absence with verifier-minted authority passes, and names it.
 
     GateStatus.SKIPPED_DECLARED maps to the FAILED exit code by default, and that
     mapping documents that the authorising decision-log entry is what converts it
@@ -270,20 +282,28 @@ def test_authorised_declared_absence_passes_but_stays_visible(tmp_repo: Any) -> 
     Visibility is the other half of the contract and is asserted here too. The
     absence is not swallowed: it is counted in the summary and each skip is listed
     against the decision that authorises it, so a reader cannot mistake this run
-    for one where every gate actually ran.
+    for one where every gate actually ran. The typed authority itself stays out
+    of the serialised gate result: JSON output carries the derived id string only.
     """
     calls: list[str] = []
+    root = tmp_repo('[orchestration]\nactive_packs = ["declared-pack"]\n')
+    authority = _minted_authority(
+        root,
+        "declared-gap:runner",
+        "2026-08-23 | DEC-777 | runner absence accepted | reviewer "
+        "| declared-gap:runner | active | -",
+    )
     skipped = GateResult.skipped_declared(
         "declared-gap",
         summary="approved runner absence",
         reason="runner is unavailable under DEC-777",
-        decision_id="DEC-777",
+        authority={"runner": authority},
         clause="R-19",
     )
     pack = _TestPack("declared-pack", (_RecordingGate("declared-gap", skipped, calls),))
     registry.register(pack)
 
-    result = run_active_domain_gates(_config(tmp_repo, pack.name))
+    result = run_active_domain_gates(load_config(root=root, env={}))
 
     assert calls == ["declared-gap"]
     assert result.status is GateStatus.PASSED
@@ -292,8 +312,10 @@ def test_authorised_declared_absence_passes_but_stays_visible(tmp_repo: Any) -> 
         "declared-pack/declared-gap": "DEC-777"
     }
     assert "1 declared unavailable under recorded decisions" in result.summary
-    gate_measurements = result.measurements["gate_results"][0]["result"]["measurements"]
-    assert gate_measurements["decision_id"] == "DEC-777"
+    serialised = result.measurements["gate_results"][0]["result"]
+    assert serialised["measurements"]["decision_id"] == "DEC-777"
+    assert "declared_skip_authority" not in serialised
+    json.dumps(result.measurements["gate_results"])
 
 
 # Traceability: R-19 [Unavailable domain gate evidence]
@@ -321,6 +343,203 @@ def test_unauthorised_declared_absence_fails_and_names_the_gate(tmp_repo: Any) -
     assert result.status is GateStatus.FAILED
     assert result.exit_code == 1
     assert result.measurements["unauthorised_declared_skips"] == ["unowned-pack/unowned-gap"]
+
+
+# Traceability: R-19 [Declared skip trusts only verified authority]
+def test_forged_decision_id_string_no_longer_authorises_a_skip(tmp_repo: Any) -> None:
+    """The literal PEER-REVIEW-3 exploit: a bare decision_id string is not authority.
+
+    Before DEC-016's corrective action, aggregation trusted any non-empty
+    ``decision_id`` measurement, so ``decision_id="nonsense"`` turned an absent
+    runner green without any ledger record existing. Authority is now only the
+    typed value minted by the shared verifier; the same forged string must fail
+    the release verdict and name the gate that carried it.
+    """
+    skipped = GateResult.skipped_declared(
+        "forged-gap",
+        summary="forged runner absence",
+        reason="runner absent with an invented id",
+        decision_id="nonsense",
+        clause="R-19",
+    )
+    pack = _TestPack("forged-pack", (_RecordingGate("forged-gap", skipped, []),))
+    registry.register(pack)
+
+    result = run_active_domain_gates(_config(tmp_repo, pack.name))
+
+    assert result.status is GateStatus.FAILED
+    assert result.exit_code == 1
+    assert result.measurements["unauthorised_declared_skips"] == ["forged-pack/forged-gap"]
+    finding = result.findings[0]
+    assert finding.id == "FORGED-PACK-FORGED-GAP-UNVERIFIED-SKIP"
+    assert finding.severity is Severity.BLOCKER
+    assert "no verified authority" in finding.message
+
+
+# Traceability: R-19 [Declared skip trusts only verified authority]
+def test_borrowed_authority_for_another_gate_does_not_transfer(tmp_repo: Any) -> None:
+    """Real authority recorded for one gate cannot authorise a different gate's skip.
+
+    The subject's gate segment — everything before the first separator — must
+    equal the producing gate's name, so a decision accepting one gate's absence
+    is not a bearer token any declared skip can spend.
+    """
+    root = tmp_repo('[orchestration]\nactive_packs = ["borrowed-pack"]\n')
+    authority = _minted_authority(
+        root,
+        "other-gate:runner",
+        "2026-08-23 | DEC-31 | other-gate absence accepted | reviewer "
+        "| other-gate:runner | active | -",
+    )
+    skipped = GateResult.skipped_declared(
+        "borrowed-gap",
+        summary="absence borrowing an unrelated decision",
+        reason="runner absent",
+        authority={"runner": authority},
+        clause="R-19",
+    )
+    pack = _TestPack("borrowed-pack", (_RecordingGate("borrowed-gap", skipped, []),))
+    registry.register(pack)
+
+    result = run_active_domain_gates(load_config(root=root, env={}))
+
+    assert result.status is GateStatus.FAILED
+    assert result.measurements["unauthorised_declared_skips"] == ["borrowed-pack/borrowed-gap"]
+    assert "does not name this gate and runner" in result.findings[0].message
+    assert "other-gate:runner" in result.findings[0].message
+
+
+# Traceability: R-19 [Declared skip trusts only verified authority]
+def test_gate_name_containing_the_subject_separator_fails_closed(tmp_repo: Any) -> None:
+    """A separator-bearing gate name can never have its declared skips authorised.
+
+    The gate segment of a subject is everything before the first separator, so a
+    gate named with a ``:`` cannot be named by any subject. The invariant is
+    enforced fail-closed rather than left as a naming convention.
+    """
+    root = tmp_repo('[orchestration]\nactive_packs = ["colon-pack"]\n')
+    authority = _minted_authority(
+        root,
+        "odd:gate:runner",
+        "2026-08-23 | DEC-42 | odd gate absence accepted | reviewer | odd:gate:runner | active | -",
+    )
+    skipped = GateResult.skipped_declared(
+        "odd:gate",
+        summary="absence for a gate whose name contains the separator",
+        reason="runner absent",
+        authority={"runner": authority},
+        clause="R-19",
+    )
+    pack = _TestPack("colon-pack", (_RecordingGate("odd:gate", skipped, []),))
+    registry.register(pack)
+
+    result = run_active_domain_gates(load_config(root=root, env={}))
+
+    assert result.status is GateStatus.FAILED
+    assert result.measurements["unauthorised_declared_skips"] == ["colon-pack/odd:gate"]
+    assert "contains the subject separator" in result.findings[0].message
+
+
+# Traceability: R-19 [Declared skip trusts only verified authority]
+def test_whole_gate_subject_is_not_a_wildcard(tmp_repo: Any) -> None:
+    """A subject naming only the gate cannot authorize every runner of that gate.
+
+    The subject must exactly equal the gate name, the separator, and the runner
+    key the authority is attached under — a runnerless subject would otherwise
+    be one ledger record spendable for any absence the gate ever declares.
+    """
+    root = tmp_repo('[orchestration]\nactive_packs = ["wildcard-pack"]\n')
+    authority = _minted_authority(
+        root,
+        "wildcard-gap",
+        "2026-08-23 | DEC-55 | whole-gate absence accepted | reviewer | wildcard-gap | active | -",
+    )
+    skipped = GateResult.skipped_declared(
+        "wildcard-gap",
+        summary="absence claiming a runnerless subject",
+        reason="runner absent",
+        authority={"runner": authority},
+        clause="R-19",
+    )
+    pack = _TestPack("wildcard-pack", (_RecordingGate("wildcard-gap", skipped, []),))
+    registry.register(pack)
+
+    result = run_active_domain_gates(load_config(root=root, env={}))
+
+    assert result.status is GateStatus.FAILED
+    assert result.measurements["unauthorised_declared_skips"] == ["wildcard-pack/wildcard-gap"]
+    assert "does not name this gate and runner" in result.findings[0].message
+
+
+# Traceability: R-19 [Declared skip trusts only verified authority]
+def test_hand_built_fake_authority_value_is_named_not_crashed_on(tmp_repo: Any) -> None:
+    """A non-verifier value smuggled into the typed mapping is a named failure.
+
+    ``skipped_declared`` refuses fakes at construction, so the only route here
+    is a hand-built result. Aggregation must still name the problem instead of
+    tripping over the fake and degrading into a generic crash BLOCK.
+    """
+    forged = GateResult(
+        gate="fake-gap",
+        status=GateStatus.SKIPPED_DECLARED,
+        clause="R-19",
+        summary="hand-built skip with a counterfeit authority value",
+        measurements={"decision_id": "DEC-1", "reason": "runner absent"},
+        declared_skip_authority={"runner": cast(VerifiedAuthority, object())},
+    )
+    pack = _TestPack("fake-pack", (_RecordingGate("fake-gap", forged, []),))
+    registry.register(pack)
+
+    result = run_active_domain_gates(_config(tmp_repo, pack.name))
+
+    assert result.status is GateStatus.FAILED
+    assert result.measurements["unauthorised_declared_skips"] == ["fake-pack/fake-gap"]
+    assert "not verifier-minted" in result.findings[0].message
+
+
+# Traceability: R-19 [Declared skip trusts only verified authority]
+def test_blocking_finding_on_a_declared_skip_is_not_converted_to_a_pass(tmp_repo: Any) -> None:
+    """Authorised absence converts the skip, not the failure evidence around it.
+
+    A gate can report a declared absence for one runner while another, present
+    runner failed. The authority owns only the absence; a Major finding riding
+    on the same result must fail the release verdict rather than survive only
+    inside nested measurements of a green aggregate.
+    """
+    root = tmp_repo('[orchestration]\nactive_packs = ["degraded-pack"]\n')
+    authority = _minted_authority(
+        root,
+        "degraded-gap:runner",
+        "2026-08-23 | DEC-66 | runner absence accepted | reviewer "
+        "| degraded-gap:runner | active | -",
+    )
+    base = GateResult.skipped_declared(
+        "degraded-gap",
+        summary="absence owned, but a present runner failed",
+        reason="one runner absent, one failed",
+        authority={"runner": authority},
+        clause="R-19",
+    )
+    failed_alongside = dataclasses.replace(
+        base,
+        findings=(
+            Finding(
+                "DEGRADED-RUNNER-FAILED",
+                Severity.MAJOR,
+                "present runner exited non-zero",
+                clause="R-19",
+                disposition="Fix the failing runner scenario.",
+            ),
+        ),
+    )
+    pack = _TestPack("degraded-pack", (_RecordingGate("degraded-gap", failed_alongside, []),))
+    registry.register(pack)
+
+    result = run_active_domain_gates(load_config(root=root, env={}))
+
+    assert result.status is GateStatus.FAILED
+    assert result.measurements["degraded_declared_skips"] == ["degraded-pack/degraded-gap"]
+    assert result.findings[0].id == "DEGRADED-PACK-DEGRADED-RUNNER-FAILED"
 
 
 # Traceability: R-19 [Configured release order]

@@ -34,14 +34,22 @@ def test_hardware_missing_without_decision_is_visible_blocker(tmp_path: Path) ->
     assert result.measurements["missing"] == {"hil_smoke": None, "sitl_mission": None}
 
 
+# Traceability: R-15 [Absence authority is resolved by the shared verifier]
 def test_hardware_missing_with_decision_is_declared(tmp_path: Path) -> None:
-    """A decision log entry naming each runner owns an intentional CI absence."""
+    """A live record whose subject names each runner owns an intentional CI absence.
+
+    Authority resolves through the shared verifier by exact subject equality on
+    ``hardware-in-loop:<runner>``, and the typed authority rides on the result
+    while the measurements keep their serialisable per-runner id shape.
+    """
     docs = tmp_path / "docs"
     docs.mkdir()
     (docs / "decision-log.md").write_text(
         (
-            "2026-08-22 | DEC-1 | hil_smoke unavailable | reviewer | - | active | -\n"
-            "2026-08-22 | DEC-2 | sitl_mission unavailable | reviewer | - | active | -\n"
+            "2026-08-22 | DEC-1 | hil_smoke unavailable | reviewer "
+            "| hardware-in-loop:hil_smoke | active | -\n"
+            "2026-08-22 | DEC-2 | sitl_mission unavailable | reviewer "
+            "| hardware-in-loop:sitl_mission | active | -\n"
         ),
         encoding="utf-8",
     )
@@ -50,6 +58,152 @@ def test_hardware_missing_with_decision_is_declared(tmp_path: Path) -> None:
     assert not result.findings
     assert result.measurements["decision_id"] == "DEC-1,DEC-2"
     assert result.measurements["missing"] == {"hil_smoke": "DEC-1", "sitl_mission": "DEC-2"}
+    assert result.declared_skip_authority is not None
+    assert {
+        runner: authority.decision_id
+        for runner, authority in result.declared_skip_authority.items()
+    } == {"hil_smoke": "DEC-1", "sitl_mission": "DEC-2"}
+    assert all(
+        authority.subject == f"hardware-in-loop:{runner}"
+        for runner, authority in result.declared_skip_authority.items()
+    )
+
+
+# Traceability: R-15 [Absence authority is resolved by the shared verifier]
+def test_prose_mention_of_a_runner_no_longer_authorises_its_absence(tmp_path: Path) -> None:
+    """The pre-DEC-016 exploit: a runner named inside prose cells used to authorize.
+
+    The old check matched the runner name as a substring of the whole joined
+    record row. These records mention both runners in prose — one even as a
+    substring of a longer rig name — but their subject cells authorize nothing,
+    so the absence must stay BLOCKED.
+    """
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "decision-log.md").write_text(
+        (
+            "2026-08-22 | DEC-1 | hil_smoke unavailable | reviewer | - | active | -\n"
+            "2026-08-22 | DEC-2 | sitl_mission moved to sitl_mission_extra rig | reviewer "
+            "| hardware-in-loop:sitl_mission_extra | active | -\n"
+        ),
+        encoding="utf-8",
+    )
+    result = HardwareInLoopGate().check(load_config(root=tmp_path, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert "without decision-log authority" in result.findings[0].message
+    assert result.measurements["missing"] == {"hil_smoke": None, "sitl_mission": None}
+
+
+# Traceability: R-15 [Absence authority is resolved by the shared verifier]
+def test_withdrawn_absence_authority_blocks_the_gate(tmp_path: Path) -> None:
+    """A later supersedes reference withdraws an absence authorization for good.
+
+    The withdrawn runner's absence becomes unauthorised even though the original
+    record's own status cell still says active — the ledger is append-only, so
+    only the later reference can kill it.
+    """
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "decision-log.md").write_text(
+        (
+            "2026-08-22 | DEC-1 | hil_smoke unavailable | reviewer "
+            "| hardware-in-loop:hil_smoke | active | -\n"
+            "2026-08-22 | DEC-2 | sitl_mission unavailable | reviewer "
+            "| hardware-in-loop:sitl_mission | active | -\n"
+            "2026-08-23 | DEC-3 | rig restored; DEC-1 withdrawn | reviewer | - | active | DEC-1\n"
+        ),
+        encoding="utf-8",
+    )
+    result = HardwareInLoopGate().check(load_config(root=tmp_path, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert "hil_smoke" in result.findings[0].message
+    assert "sitl_mission" not in result.findings[0].message
+    assert result.measurements["missing"] == {"hil_smoke": None, "sitl_mission": "DEC-2"}
+    assert result.measurements["denials"]["hil_smoke"].startswith("superseded:")
+
+
+# Traceability: R-15 [Absence authority is resolved by the shared verifier]
+def test_authorised_absence_does_not_convert_a_failed_runner(tmp_path: Path) -> None:
+    """An owned absence for one runner never greens another runner's failure.
+
+    The decision authorizes the absence only; a present runner that failed its
+    scenario keeps the gate FAILED, with the authorised absence still visible
+    in the missing measurement.
+    """
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "decision-log.md").write_text(
+        "2026-08-22 | DEC-1 | absent runner accepted | reviewer "
+        "| hardware-in-loop:absent | active | -\n",
+        encoding="utf-8",
+    )
+    failure_script = "import sys; raise SystemExit(1)"
+    (tmp_path / "hex-vision.toml").write_text(
+        f"""
+[robotics.hardware_in_loop]
+optional_gates = ["local", "absent"]
+runners = {{ local = [{json.dumps(sys.executable)}, "-c", {json.dumps(failure_script)}], \
+absent = ["hexvision-definitely-not-installed"] }}
+""",
+        encoding="utf-8",
+    )
+    result = HardwareInLoopGate().check(load_config(root=tmp_path, env={}))
+    assert result.status is GateStatus.FAILED
+    assert result.findings[0].id == "HIL-LOCAL-FAILED"
+    assert result.measurements["executed"] == {"local": 1}
+    assert result.measurements["missing"] == {"absent": "DEC-1"}
+
+
+# Traceability: R-15 [Unreadable absence ledger]
+def test_unstatable_ledger_blocks_instead_of_reading_as_never_written(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Only ENOENT means "never written"; any other stat failure is evidence loss.
+
+    ``Path.exists()`` swallows non-ENOENT errors on newer Python versions, which
+    would misclassify an unreadable ledger as an absent one. The probe uses
+    ``lstat`` so a permission failure surfaces as a named evidence BLOCK.
+    """
+    config = load_config(root=tmp_path, env={})
+    monkeypatch.setattr(
+        Path,
+        "lstat",
+        lambda _self: (_ for _ in ()).throw(PermissionError("permission denied on ledger")),
+    )
+    result = HardwareInLoopGate().check(config)
+    assert result.status is GateStatus.BLOCKED
+    assert result.summary == "hardware absence authority could not be verified"
+    assert "permission denied on ledger" in result.findings[0].message
+
+
+# Traceability: R-15 [Unreadable absence ledger]
+def test_undecodable_ledger_blocks_as_an_evidence_failure(tmp_path: Path) -> None:
+    """A ledger that exists but cannot be decoded is 'could not look', not 'no decision'."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "decision-log.md").write_bytes(b"\xff\xfe invalid utf-8 ledger bytes")
+    result = HardwareInLoopGate().check(load_config(root=tmp_path, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert result.summary == "hardware absence authority could not be verified"
+    assert "not valid UTF-8" in result.findings[0].message
+
+
+# Traceability: R-15 [Unreadable absence ledger]
+def test_symlinked_ledger_blocks_instead_of_authorising(tmp_path: Path) -> None:
+    """Absence authority must come from a trusted regular file, never a symlink."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    real = tmp_path / "elsewhere.md"
+    real.write_text(
+        "2026-08-22 | DEC-1 | hil_smoke unavailable | reviewer "
+        "| hardware-in-loop:hil_smoke | active | -\n",
+        encoding="utf-8",
+    )
+    (docs / "decision-log.md").symlink_to(real)
+    result = HardwareInLoopGate().check(load_config(root=tmp_path, env={}))
+    assert result.status is GateStatus.BLOCKED
+    assert result.summary == "hardware absence authority could not be verified"
+    assert "symlink" in result.findings[0].message
 
 
 def test_hardware_present_runner_passes(tmp_path: Path) -> None:

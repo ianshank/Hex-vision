@@ -28,6 +28,17 @@ that cannot load or evaluate SHALL block the release path.
 - **THEN** the invalid allowlisted pack SHALL block the release path and the
   unallowlisted pack SHALL not be loaded or trusted.
 
+#### Scenario: Declared skip trusts only verified authority
+- **WHEN** aggregation receives a `SKIPPED_DECLARED` result
+- **THEN** the release verdict SHALL convert it to a pass only when every
+  attached authority is verifier-minted and its subject exactly equals the
+  producing gate's name, the subject separator, and the runner key it is
+  attached under, and the result carries no blocking findings. A bare
+  decision-id string in measurements, an authority minted for a different gate
+  or runner, a subject with no runner segment, a gate name containing the
+  separator, or a blocking finding riding on the declared result SHALL fail the
+  release verdict while naming the offending gate and the exact problem.
+
 #### Scenario: Configured release order
 - **WHEN** the configured `contract.pre_pr_order` includes active-pack
   domain-gate orchestration

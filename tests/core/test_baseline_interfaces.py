@@ -8,10 +8,11 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
+from hexvision.authority import VerifiedAuthority, verify_authority
 from hexvision.config import Config, load_config
 from hexvision.errors import (
     ConfigError,
@@ -172,6 +173,97 @@ def test_run_gates_collects_all_results(make_config, tmp_repo) -> None:  # type:
         "test-gate",
         "second",
     ]
+
+
+def _verified_authority(tmp_repo: Callable[..., Path], subject: str) -> VerifiedAuthority:
+    """Mint one real authority through the shared verifier for structural tests."""
+    root = tmp_repo()
+    docs = root / "docs"
+    docs.mkdir(exist_ok=True)
+    (docs / "decision-log.md").write_text(
+        f"2026-08-23 | DEC-9 | absence accepted | reviewer | {subject} | active | -\n",
+        encoding="utf-8",
+    )
+    authority = verify_authority(load_config(root=root, env={}), subject=subject)
+    assert isinstance(authority, VerifiedAuthority)
+    return authority
+
+
+# Traceability: R-19 [Declared skip trusts only verified authority]
+def test_skipped_declared_derives_its_display_id_from_attached_authority(
+    tmp_repo: Callable[..., Path],
+) -> None:
+    """The joined decision_id measurement is derived from the typed authority.
+
+    One reconciliation point: the display string comes from the authority
+    mapping inside the constructor, so the typed shape and the measurement can
+    never disagree. The typed value itself stays out of ``to_dict`` because a
+    JSON round-trip would launder process-local trust back into forgeable data.
+    """
+    authority = _verified_authority(tmp_repo, "gap-gate:runner")
+    result = GateResult.skipped_declared(
+        "gap-gate",
+        summary="approved absence",
+        reason="runner absent",
+        authority={"runner": authority},
+    )
+    assert result.status is GateStatus.SKIPPED_DECLARED
+    assert result.declared_skip_authority == {"runner": authority}
+    assert result.measurements["decision_id"] == "DEC-9"
+    assert not result.findings
+    assert "declared_skip_authority" not in result.to_dict()
+    json.dumps(result.to_dict())
+
+
+# Traceability: R-19 [Declared skip trusts only verified authority]
+def test_skipped_declared_refuses_conflicting_or_forgeable_authority_shapes(
+    tmp_repo: Callable[..., Path],
+) -> None:
+    """Bare ids and typed authority cannot be combined, faked, or emptied."""
+    authority = _verified_authority(tmp_repo, "gap-gate:runner")
+    with pytest.raises(ValueError, match="never both"):
+        GateResult.skipped_declared(
+            "gap-gate",
+            summary="s",
+            reason="r",
+            decision_id="DEC-9",
+            authority={"runner": authority},
+        )
+    with pytest.raises(ValueError, match="empty authority"):
+        GateResult.skipped_declared("gap-gate", summary="s", reason="r", authority={})
+    with pytest.raises(TypeError, match="verifier-minted"):
+        GateResult.skipped_declared(
+            "gap-gate",
+            summary="s",
+            reason="r",
+            authority={"runner": cast(VerifiedAuthority, object())},
+        )
+
+
+# Traceability: R-19 [Declared skip trusts only verified authority]
+def test_run_gate_forwards_declared_skip_authority_structurally(
+    make_config: Callable[[Path, dict[str, Any] | None], Config],
+    tmp_repo: Callable[..., Path],
+) -> None:
+    """The runner's success path forwards every result field, including new ones.
+
+    ``run_gate`` used to rebuild results from a hand-maintained field list,
+    which silently dropped any field the list forgot — the same per-site
+    fragility that produced three authority re-implementations (DEC-016). The
+    rebuild is now structural, so the typed authority a gate attaches must
+    survive to aggregation.
+    """
+    authority = _verified_authority(tmp_repo, "test-gate:runner")
+    skipped = GateResult.skipped_declared(
+        "test-gate",
+        summary="approved absence",
+        reason="runner absent",
+        authority={"runner": authority},
+    )
+    result = run_gate(_TestGate(skipped), make_config(tmp_repo(), None))
+    assert result.declared_skip_authority == {"runner": authority}
+    assert result.clause == "TEST"
+    assert "duration_ms" in result.measurements
 
 
 def test_model_rejections_sorting_and_target_spec_validation() -> None:
