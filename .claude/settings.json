@@ -1,0 +1,24 @@
+{
+  "_comment": "Governed decision: changing hooks, permissions, or plugin sources requires decision-log review.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/pretooluse_guard.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": ["Read", "Grep", "Glob", "Edit", "Write", "Bash(make *)", "Bash(pytest *)"],
+    "deny": ["Bash(git push *)", "Bash(git reset --hard *)", "Bash(git clean -f*)", "Bash(rm -rf *)", "Bash(gh repo delete *)"]
+  },
+  "enabledPlugins": {
+    "github@2.1.0": true,
+    "huggingface@1.0.0": true
+  }
+}

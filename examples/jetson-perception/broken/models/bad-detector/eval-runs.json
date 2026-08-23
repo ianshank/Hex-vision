@@ -1,0 +1,1 @@
+{"schema_version": 1, "model_name": "bad-detector", "runs": [{"metric_value": 0.9, "python_seed": 1}, {"metric_value": 0.9, "python_seed": 2}]}

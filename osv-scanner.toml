@@ -1,0 +1,3 @@
+# Hex-vision OSV policy. No advisories are ignored. Any future [[IgnoredVulns]]
+# entry must name the advisory, owner, reason, and expiry so an exception cannot
+# become a permanent silent policy change.

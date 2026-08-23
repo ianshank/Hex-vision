@@ -21,7 +21,7 @@ dependencies = []
 # Gate tool versions are pinned EXACTLY. A floating linter version is a gate
 # whose definition changes under you; a bump is a reviewable diff.
 dev = [
-  "pytest==8.3.4",
+  "pytest==9.0.3",
   "pytest-cov==6.0.0",
   "coverage==7.6.10",
   "ruff==0.9.2",
@@ -36,6 +36,15 @@ hexvision = "hexvision.cli:main"
 # Packs are discovered dynamically through entry points, never by an import
 # list in the core. A new stack pack is installable without editing core code.
 jetson = "hexvision.packs.jetson:pack"
+
+[project.entry-points."hexvision.invariant_verifiers"]
+# Each proof runs a negative mutation against its declared mechanism. External
+# packs install a verifier rather than adding an invariant branch to core.
+inv_1 = "hexvision.invariant_verifiers:inv_1"
+inv_2 = "hexvision.invariant_verifiers:inv_2"
+inv_3 = "hexvision.invariant_verifiers:inv_3"
+inv_4 = "hexvision.invariant_verifiers:inv_4"
+inv_5 = "hexvision.invariant_verifiers:inv_5"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hexvision"]
@@ -119,6 +128,9 @@ select = [
   "PL",       # pylint subset
   "RUF",
   "S",        # bandit security rules
+  "PT",       # pytest test correctness and style
+  "TID",      # import hygiene, including banned relative imports
+  "ANN",      # annotation completeness
 ]
 ignore = [
   # The harness composes shell commands by design (that IS the product); each
@@ -133,17 +145,25 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests assert on failure paths, so `assert` (S101) is the point, and long
 # fixture literals are clearer inline than extracted.
-"tests/**/*.py" = ["S101", "PLR2004", "ARG001"]
+# Pytest injects runtime fixture factories whose concrete callable signatures
+# are not visible to static analysis; these test-only fixture parameters are
+# deliberately exempt while production code remains fully annotated.
+"tests/**/*.py" = ["S101", "PLR2004", "ARG001", "ANN001", "ANN401"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
 warn_unreachable = true
 warn_unused_configs = true
+# Keep these explicit even though current strict mode implies some of them:
+# they protect the intended boundary if mypy changes its strict bundle.
+disallow_any_generics = true
+disallow_any_unimported = true
+disallow_subclassing_any = true
 # An untyped decorator erases the signature of everything it wraps, which is
 # how a "strict" project quietly stops checking its own entry points.
 disallow_untyped_decorators = true
-files = ["src/hexvision", "tests"]
+files = ["src/hexvision", "tests", "planning"]
 
 [tool.vulture]
 min_confidence = 80

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "model_name": "detector",
+  "runs": [
+    {"metric_value": 0.9100, "python_seed": 42, "numpy_seed": 42, "framework_seed": 42},
+    {"metric_value": 0.9104, "python_seed": 42, "numpy_seed": 42, "framework_seed": 42},
+    {"metric_value": 0.9099, "python_seed": 42, "numpy_seed": 42, "framework_seed": 42}
+  ]
+}

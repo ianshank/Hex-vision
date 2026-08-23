@@ -39,16 +39,16 @@ import tomllib
 from collections.abc import Iterator, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, TypeAlias
 
 from hexvision.errors import ConfigError, FrozenKeyOverrideError, MissingKeyError
 from hexvision.observability import get_logger
 
 __all__ = [
+    "REPO_CONFIG_FILENAME",
     "Config",
     "ConfigLayer",
     "Provenance",
-    "REPO_CONFIG_FILENAME",
     "find_repo_root",
     "load_config",
 ]
@@ -73,6 +73,11 @@ _DEFAULT_ENV_PREFIX: Final = "HEXVISION_"
 #: Without this exclusion, `HEXVISION_LOG_LEVEL` would resolve to a bogus
 #: `log.level` key and pollute `config dump`.
 _ENV_RESERVED_SUFFIXES: Final = frozenset({"LOG_LEVEL", "LOG_FORMAT", "CONFIG"})
+
+# TOML accepts heterogeneous scalar, list, table, and date-like values. The
+# configuration accessors intentionally expose that dynamic boundary; each
+# consuming policy validates its concrete schema before acting on the value.
+ConfigValue: TypeAlias = Any
 
 
 class ConfigLayer:
@@ -160,9 +165,9 @@ def _read_toml(path: Path) -> dict[str, Any]:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
 
 
-def _nested_get(data: Mapping[str, Any], path: Sequence[str]) -> Any | None:
+def _nested_get(data: Mapping[str, ConfigValue], path: Sequence[str]) -> ConfigValue | None:
     """Return a nested value by path segments, or ``None`` if absent."""
-    cursor: Any = data
+    cursor: ConfigValue = data
     for segment in path:
         if not isinstance(cursor, Mapping) or segment not in cursor:
             return None
@@ -199,7 +204,24 @@ def _flatten(data: Mapping[str, Any], prefix: str = "") -> Iterator[tuple[str, A
             yield from _flatten(value, prefix=f"{dotted}.")
 
 
-def _parse_env_value(raw: str) -> Any:
+def _assert_supported_keys(
+    data: Mapping[str, Any],
+    *,
+    supported_keys: frozenset[str],
+    extensible_tables: tuple[str, ...],
+    source: str,
+) -> None:
+    """Reject unsupported keys, allowing only shipped, explicitly extensible maps."""
+    for key, _ in _flatten(data):
+        is_dynamic_member = any(key.startswith(f"{table}.") for table in extensible_tables)
+        if key not in supported_keys and not is_dynamic_member:
+            raise ConfigError(
+                f"unsupported configuration key {key!r} in {source}. "
+                "Declare only keys shipped by the packaged configuration contract."
+            )
+
+
+def _parse_env_value(raw: str) -> ConfigValue:
     """Type an environment string by parsing it as a TOML value.
 
     ``HEXVISION_ROBOTICS__LATENCY__PERCENTILE=95`` must yield the integer ``95``,
@@ -285,9 +307,11 @@ class Config:
         Matching is on whole path segments, so a prefix of ``contract`` freezes
         ``contract.targets`` but not a hypothetical ``contractor`` key.
         """
-        return any(key == prefix or key.startswith(f"{prefix}.") for prefix in self._frozen_prefixes)
+        return any(
+            key == prefix or key.startswith(f"{prefix}.") for prefix in self._frozen_prefixes
+        )
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: str, default: ConfigValue = None) -> ConfigValue:
         """Return the value at a dotted key, or ``default`` when absent.
 
         Returns a deep copy of tables and lists so a caller cannot mutate shared
@@ -298,7 +322,7 @@ class Config:
             return default
         return copy.deepcopy(value) if isinstance(value, Mapping | list) else value
 
-    def require(self, key: str, *, clause: str | None = None) -> Any:
+    def require(self, key: str, *, clause: str | None = None) -> ConfigValue:
         """Return the value at a dotted key or raise.
 
         Used for every value a gate cannot sensibly default. Guessing a latency
@@ -435,20 +459,31 @@ def load_config(
         """Merge one layer and record provenance for every key it sets."""
         for key, value in _flatten(data):
             previous = provenance.get(key)
-            shadowed = (
-                ((previous.layer, previous.value), *previous.shadowed) if previous else ()
-            )
+            shadowed = ((previous.layer, previous.value), *previous.shadowed) if previous else ()
             provenance[key] = Provenance(
                 key=key, value=value, layer=layer, source=source, shadowed=shadowed
             )
         _deep_merge(merged, data)
         _LOG.debug("config layer applied", extra={"layer": layer, "source": source})
 
+    packaged_defaults = _read_toml(_PACKAGED_DEFAULTS)
+    supported_keys = frozenset(key for key, _ in _flatten(packaged_defaults))
+    extensible_tables = tuple(
+        str(table)
+        for table in (_nested_get(packaged_defaults, ("meta", "extensible_tables")) or ())
+    )
     file_layers = _layer_sources(resolved_root, config_path)
     for layer, path in file_layers:
         data = _read_toml(path)
         if layer == ConfigLayer.PYPROJECT:
             data = dict(_nested_get(data, _PYPROJECT_TABLE) or {})
+        if layer != ConfigLayer.PACKAGED:
+            _assert_supported_keys(
+                data,
+                supported_keys=supported_keys,
+                extensible_tables=extensible_tables,
+                source=str(path),
+            )
         apply(layer, data, str(path))
 
     # Frozen prefixes come from the merged file layers, so a repository can
@@ -459,12 +494,24 @@ def load_config(
 
     env_data = _env_layer(resolved_env, env_prefix)
     if env_data:
+        _assert_supported_keys(
+            env_data,
+            supported_keys=supported_keys,
+            extensible_tables=extensible_tables,
+            source=f"the environment ({env_prefix}*)",
+        )
         _assert_no_frozen_writes(
             ConfigLayer.ENV, env_data, frozen_prefixes, f"the environment ({env_prefix}*)"
         )
         apply(ConfigLayer.ENV, env_data, "environment")
 
     if overrides:
+        _assert_supported_keys(
+            overrides,
+            supported_keys=supported_keys,
+            extensible_tables=extensible_tables,
+            source="a command-line override",
+        )
         _assert_no_frozen_writes(
             ConfigLayer.OVERRIDE, overrides, frozen_prefixes, "a command-line override"
         )
