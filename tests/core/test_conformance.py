@@ -432,6 +432,17 @@ def test_construction_inside_the_defining_module_is_permitted(make_config, tmp_r
     assert check_pack(config, _Conforming()).status.value == "passed"
 
 
+def test_non_utf8_source_blocks_instead_of_crashing(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """An undecodable source file is a fail-closed BLOCKED verdict, never an escape."""
+    root = tmp_repo()
+    config = make_config(root)
+    _prepare_contract_evidence(root, config)
+    (root / "src" / "bad_bytes.py").write_bytes(b"\xff\xfe not decodable python source")
+    result = check_pack(config, _Conforming())
+    assert result.status.value == "blocked"
+    assert "cannot be inspected" in result.summary
+
+
 def test_conformance_blocks_unreadable_source_and_domain_gates(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """Conformance fails closed when AST evidence or domain-gate declarations cannot load."""
     bad_source = tmp_repo()

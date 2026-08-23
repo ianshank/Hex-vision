@@ -196,6 +196,17 @@ def test_unreadable_log_raises_for_caller_blocking_not_denial(tmp_repo: Any) -> 
         verify_authority(load_config(root=root, env={}), subject="hardware-in-loop:alpha")
 
 
+def test_undecodable_log_raises_oserror_not_unicode_error(tmp_repo: Any) -> None:
+    """A non-UTF-8 ledger honors the documented OSError contract for BLOCKED callers."""
+    root = tmp_repo()
+    docs = root / "docs"
+    docs.mkdir(exist_ok=True)
+    (docs / "decision-log.md").write_bytes(b"\xff\xfe invalid utf-8 ledger bytes")
+
+    with pytest.raises(OSError, match="not valid UTF-8"):
+        verify_authority(load_config(root=root, env={}), subject="hardware-in-loop:alpha")
+
+
 def test_lifecycle_columns_absent_from_adopter_schema_raise(tmp_repo: Any) -> None:
     """An adopter schema without the lifecycle columns cannot silently half-verify."""
     root = tmp_repo(
