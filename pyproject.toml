@@ -37,6 +37,15 @@ hexvision = "hexvision.cli:main"
 # list in the core. A new stack pack is installable without editing core code.
 jetson = "hexvision.packs.jetson:pack"
 
+[project.entry-points."hexvision.invariant_verifiers"]
+# Each proof runs a negative mutation against its declared mechanism. External
+# packs install a verifier rather than adding an invariant branch to core.
+inv_1 = "hexvision.invariant_verifiers:inv_1"
+inv_2 = "hexvision.invariant_verifiers:inv_2"
+inv_3 = "hexvision.invariant_verifiers:inv_3"
+inv_4 = "hexvision.invariant_verifiers:inv_4"
+inv_5 = "hexvision.invariant_verifiers:inv_5"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/hexvision"]
 

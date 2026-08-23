@@ -47,7 +47,7 @@ targets = [
 # local pass stops predicting a CI pass, which is the only reason to run it.
 pre_pr_order = [
   "install", "lint", "types", "cov", "secrets", "specs", "audit", "remotes",
-  "projections", "traceability",
+  "projections", "traceability", "conformance",
 ]
 # Conformance reads the authoritative prerequisite chain from this repository
 # artifact; packs must delegate to it instead of copying the chain themselves.
@@ -78,6 +78,21 @@ inv_2 = "INV-2"
 inv_3 = "remotes"
 inv_4 = "install"
 inv_5 = "INV-5"
+
+# Invariant mappings are claims until a dynamically discovered verifier proves
+# them against a negative probe. The no-op list is a backstop; each verifier's
+# synthetic violation is the primary evidence that a declared mechanism works.
+[contract.conformance]
+no_op_commands = ["true", ":", "/bin/true", "echo"]
+reason_patterns = { inv_1 = "leaks found", inv_2 = "skip or xfail", inv_3 = "unapproved destination", inv_4 = "installed pre-push hook", inv_5 = "forbidden raw command" }
+secret_policy_path = ".gitleaks.toml"
+secret_probe_seed = 127
+secret_probe_prefix = "ghp_"
+secret_probe_length = 36
+probe_remote = "https://example.invalid/hexvision/conformance"
+hook_installer_path = "scripts/install_hooks.sh"
+hook_source_path = "scripts/pre_push_scan.sh"
+probe_package_manager = "true"
 
 # --------------------------------------------------------------------------
 # INV-3: destination allowlist. An empty allowlist is BLOCK, never ALLOW.

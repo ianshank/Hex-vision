@@ -104,6 +104,18 @@ def test_ci_jobs_enforce_the_configured_pre_pr_dependency_graph() -> None:
             )
 
 
+def test_ci_gate_sequence_equals_the_configured_pre_pr_order() -> None:
+    """Parsed CI jobs must have exactly the same ordered gate sequence as local pre-PR."""
+
+    order = contract()["pre_pr_order"]
+    assert isinstance(order, list)
+    jobs = ci_jobs()
+    ci_sequence = [
+        name for name in jobs if re.search(rf"run:\s*make\s+{re.escape(name)}(?:\s|$)", jobs[name])
+    ]
+    assert ci_sequence == order, "CI gate sequence must equal contract.pre_pr_order"
+
+
 def test_ci_fetches_full_history_for_secret_scan() -> None:
     """A history scanner on a shallow checkout is not a meaningful gate."""
     secrets = ci_jobs()["secrets"]
