@@ -74,9 +74,9 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with: { python-version: "3.11" }
       - run: make install
-      - run: go install github.com/zricethezav/gitleaks/v8@v8.28.0
-      - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - run: make secrets GITLEAKS=gitleaks GITLEAKS_VERSION=v8.28.0
+      - run: make secrets-install INSTALL_DIR="$RUNNER_TEMP/bin" INSTALL_METHOD=release
+      - run: echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: make secrets
 
   specs:
     needs: secrets
@@ -100,9 +100,9 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with: { python-version: "3.11" }
       - run: make install
-      - run: go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.2.4
-      - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - run: make audit OSV=osv-scanner OSV_VERSION=v2.2.4
+      - run: make audit-install INSTALL_DIR="$RUNNER_TEMP/bin" INSTALL_METHOD=release
+      - run: echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: make audit
 
   remotes:
     needs: audit

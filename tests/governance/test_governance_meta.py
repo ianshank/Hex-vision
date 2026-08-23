@@ -141,10 +141,15 @@ def test_ci_pins_runner_disables_checkout_credentials_and_supplies_scanner_versi
     assert ci.count("runs-on: ubuntu-24.04") == len(ci_jobs())
     checkout_count = ci.count("uses: actions/checkout@")
     assert checkout_count == ci.count("persist-credentials: false")
-    assert "go install github.com/zricethezav/gitleaks/v8@v8.28.0" in ci
-    assert "make secrets GITLEAKS=gitleaks GITLEAKS_VERSION=v8.28.0" in ci
-    assert "go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.2.4" in ci
-    assert "make audit OSV=osv-scanner OSV_VERSION=v2.2.4" in ci
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    assert "GITLEAKS_VERSION ?= v8.28.0" in makefile
+    assert "OSV_VERSION ?= v2.2.4" in makefile
+    assert "checksum mismatch; refusing to install" in makefile
+    assert "make secrets-install INSTALL_DIR=" in ci
+    assert "make audit-install INSTALL_DIR=" in ci
+    assert "INSTALL_METHOD=release" in ci
+    assert "make secrets\n" in ci
+    assert "make audit\n" in ci
 
 
 def test_guard_scripts_delegate_to_single_cli_normalizer_with_block_fallback() -> None:

@@ -27,8 +27,21 @@ PM ?= uv
 RUN ?= $(PM) run --
 GITLEAKS ?= gitleaks
 GITLEAKS_VERSION ?= v8.28.0
+GITLEAKS_RELEASE_VERSION := $(patsubst v%,%,$(GITLEAKS_VERSION))
+GITLEAKS_LINUX_X64_SHA256 ?= a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+GITLEAKS_LINUX_ARM64_SHA256 ?= eff65261156100e5d94a6b3dec313d532fddfe19ae1590bf7a2b4f2699128356
+GITLEAKS_DARWIN_X64_SHA256 ?= edf5a507008b0d2ef4959575772772770586409c1f6f74dabf19cbe7ec341ced
+GITLEAKS_DARWIN_ARM64_SHA256 ?= d942f3ad147250c9edbaab3fed9e482f98d3b59ba10ae97b8d75647e3ade492c
 OSV ?= osv-scanner
 OSV_VERSION ?= v2.2.4
+OSV_LINUX_X64_SHA256 ?= 7702cd1e5d9f5059dd9570f4ad967f27d3c5f5391b371ec937b384c238177f55
+OSV_LINUX_ARM64_SHA256 ?= 94d1c520b30a7e28b0189b2a1dd24c7b08f41887186e8ae3f811067ec9ed7043
+OSV_DARWIN_X64_SHA256 ?= 589e673d8d6585fecf4384fa4d85cb9fa5aa7f6ff6a8c4e5ef1472e8217d5875
+OSV_DARWIN_ARM64_SHA256 ?= bd964925a27037db3a0426ac411a6599cd18781bb2bd72ce02adf4a6a1fe9058
+INSTALL_DIR ?= $(HOME)/.local/bin
+# CI selects `release` because it exports INSTALL_DIR to later steps. Local
+# `auto` preserves the existing Go installer when Go is available.
+INSTALL_METHOD ?= auto
 PKG ?= hexvision
 # Pack under test for `make conformance`. Overridable because the whole point
 # of the pack registry is that this list is not fixed in the harness.
@@ -92,8 +105,30 @@ secrets: ## Secret scan of working tree AND history. Fails closed if gitleaks is
 	$(GITLEAKS) dir $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
 	$(GITLEAKS) git $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
 
-secrets-install: ## Install the pinned gitleaks binary via go
-	go install github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION)
+secrets-install: ## Install pinned gitleaks (Go when available, verified release binary otherwise)
+	@if test "$(INSTALL_METHOD)" = "go" || { test "$(INSTALL_METHOD)" = "auto" && command -v go >/dev/null 2>&1; }; then \
+	  command -v go >/dev/null 2>&1 || { echo "go was requested but is not installed" >&2; exit 1; }; \
+	  go install github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION); \
+	elif test "$(INSTALL_METHOD)" = "auto" || test "$(INSTALL_METHOD)" = "release"; then \
+	  case "$$(uname -s):$$(uname -m)" in \
+	    Linux:x86_64) asset="gitleaks_$(GITLEAKS_RELEASE_VERSION)_linux_x64.tar.gz"; expected="$(GITLEAKS_LINUX_X64_SHA256)" ;; \
+	    Linux:aarch64|Linux:arm64) asset="gitleaks_$(GITLEAKS_RELEASE_VERSION)_linux_arm64.tar.gz"; expected="$(GITLEAKS_LINUX_ARM64_SHA256)" ;; \
+	    Darwin:x86_64) asset="gitleaks_$(GITLEAKS_RELEASE_VERSION)_darwin_x64.tar.gz"; expected="$(GITLEAKS_DARWIN_X64_SHA256)" ;; \
+	    Darwin:arm64) asset="gitleaks_$(GITLEAKS_RELEASE_VERSION)_darwin_arm64.tar.gz"; expected="$(GITLEAKS_DARWIN_ARM64_SHA256)" ;; \
+	    *) echo "unsupported platform for gitleaks release install: $$(uname -s)/$$(uname -m)" >&2; exit 1 ;; \
+	  esac; \
+	  command -v curl >/dev/null 2>&1 || { echo "curl is required to download gitleaks" >&2; exit 1; }; \
+	  workdir="$$(mktemp -d)"; trap 'rm -rf "$$workdir"' EXIT; \
+	  archive="$$workdir/$$asset"; \
+	  curl -fsSL -o "$$archive" "https://github.com/gitleaks/gitleaks/releases/download/$(GITLEAKS_VERSION)/$$asset"; \
+	  if command -v sha256sum >/dev/null 2>&1; then actual="$$(sha256sum "$$archive" | awk '{print $$1}')"; \
+	  elif command -v shasum >/dev/null 2>&1; then actual="$$(shasum -a 256 "$$archive" | awk '{print $$1}')"; \
+	  else echo "no SHA-256 utility found; refusing to install unverified gitleaks" >&2; exit 1; fi; \
+	  test "$$actual" = "$$expected" || { echo "gitleaks checksum mismatch; refusing to install" >&2; exit 1; }; \
+	  mkdir -p "$(INSTALL_DIR)"; tar -xzf "$$archive" -C "$$workdir"; \
+	  install -m 0755 "$$workdir/gitleaks" "$(INSTALL_DIR)/gitleaks"; \
+	  echo "installed gitleaks $(GITLEAKS_VERSION) to $(INSTALL_DIR)/gitleaks"; \
+	else echo "unknown INSTALL_METHOD=$(INSTALL_METHOD); expected auto, go, or release" >&2; exit 1; fi
 
 specs: ## Strict spec validation (wrapper falls back to structural validator)
 	bash $(ROOT)/scripts/validate_specs.sh
@@ -114,8 +149,29 @@ audit: ## Dependency vulnerability scan. Ignore ONLY named, documented advisorie
 	  exit 1; }
 	$(OSV) scan --lockfile=$(ROOT)/uv.lock --config=$(ROOT)/osv-scanner.toml
 
-audit-install: ## Install the pinned osv-scanner binary via go
-	go install github.com/google/osv-scanner/v2/cmd/osv-scanner@$(OSV_VERSION)
+audit-install: ## Install pinned osv-scanner (Go when available, verified release binary otherwise)
+	@if test "$(INSTALL_METHOD)" = "go" || { test "$(INSTALL_METHOD)" = "auto" && command -v go >/dev/null 2>&1; }; then \
+	  command -v go >/dev/null 2>&1 || { echo "go was requested but is not installed" >&2; exit 1; }; \
+	  go install github.com/google/osv-scanner/v2/cmd/osv-scanner@$(OSV_VERSION); \
+	elif test "$(INSTALL_METHOD)" = "auto" || test "$(INSTALL_METHOD)" = "release"; then \
+	  case "$$(uname -s):$$(uname -m)" in \
+	    Linux:x86_64) asset="osv-scanner_linux_amd64"; expected="$(OSV_LINUX_X64_SHA256)" ;; \
+	    Linux:aarch64|Linux:arm64) asset="osv-scanner_linux_arm64"; expected="$(OSV_LINUX_ARM64_SHA256)" ;; \
+	    Darwin:x86_64) asset="osv-scanner_darwin_amd64"; expected="$(OSV_DARWIN_X64_SHA256)" ;; \
+	    Darwin:arm64) asset="osv-scanner_darwin_arm64"; expected="$(OSV_DARWIN_ARM64_SHA256)" ;; \
+	    *) echo "unsupported platform for osv-scanner release install: $$(uname -s)/$$(uname -m)" >&2; exit 1 ;; \
+	  esac; \
+	  command -v curl >/dev/null 2>&1 || { echo "curl is required to download osv-scanner" >&2; exit 1; }; \
+	  workdir="$$(mktemp -d)"; trap 'rm -rf "$$workdir"' EXIT; \
+	  binary="$$workdir/$$asset"; \
+	  curl -fsSL -o "$$binary" "https://github.com/google/osv-scanner/releases/download/$(OSV_VERSION)/$$asset"; \
+	  if command -v sha256sum >/dev/null 2>&1; then actual="$$(sha256sum "$$binary" | awk '{print $$1}')"; \
+	  elif command -v shasum >/dev/null 2>&1; then actual="$$(shasum -a 256 "$$binary" | awk '{print $$1}')"; \
+	  else echo "no SHA-256 utility found; refusing to install unverified osv-scanner" >&2; exit 1; fi; \
+	  test "$$actual" = "$$expected" || { echo "osv-scanner checksum mismatch; refusing to install" >&2; exit 1; }; \
+	  mkdir -p "$(INSTALL_DIR)"; install -m 0755 "$$binary" "$(INSTALL_DIR)/osv-scanner"; \
+	  echo "installed osv-scanner $(OSV_VERSION) to $(INSTALL_DIR)/osv-scanner"; \
+	else echo "unknown INSTALL_METHOD=$(INSTALL_METHOD); expected auto, go, or release" >&2; exit 1; fi
 
 # --- governance checks (the CI guard job) --------------------------------
 
