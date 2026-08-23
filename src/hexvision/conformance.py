@@ -320,7 +320,7 @@ def check_pack(  # noqa: PLR0911, PLR0912, PLR0915 - each contract clause report
             )
     try:
         normalizers = _normalizer_count(source_root)
-    except (OSError, SyntaxError) as exc:
+    except (OSError, SyntaxError, UnicodeDecodeError) as exc:
         return GateResult.blocked(
             "conformance",
             summary="normalizer source cannot be inspected",
@@ -339,7 +339,7 @@ def check_pack(  # noqa: PLR0911, PLR0912, PLR0915 - each contract clause report
     try:
         authority_files = _authority_declaration_files(source_root)
         construction_sites = _authority_construction_sites(source_root, set(authority_files))
-    except (OSError, SyntaxError) as exc:
+    except (OSError, SyntaxError, UnicodeDecodeError) as exc:
         return GateResult.blocked(
             "conformance",
             summary="authority source cannot be inspected",
