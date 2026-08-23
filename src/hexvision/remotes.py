@@ -7,6 +7,7 @@ whether a push is allowed, which would make INV-3 unenforceable.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ __all__ = ["NormalizedRemote", "check_remotes", "normalize_remote_url", "read_gi
 _LOG: Final = get_logger(__name__)
 _CLAUSE: Final = "INV-3"
 _REMOTE_FIELDS_MINIMUM: Final = 2
+_HOST_ONLY: Final = re.compile(r"^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +48,17 @@ class NormalizedRemote:
 def _blocked(original: str, reason: str) -> NormalizedRemote:
     """Make a rejected result instead of throwing away evidence in an exception."""
     return NormalizedRemote(original=original, destination=None, blocked_reason=reason)
+
+
+def _is_known_host_allowlist_entry(value: object, known_hosts: set[str]) -> bool:
+    """Allow a configured known host to authorize all repository paths on that host.
+
+    A host-only policy entry is intentionally narrower than accepting a host-only
+    Git remote: repository remotes still require a path, while an approved model
+    registry host can govern many repository paths without repeating each one.
+    """
+    host = str(value).strip().casefold()
+    return bool(_HOST_ONLY.fullmatch(host)) and host in known_hosts
 
 
 def normalize_remote_url(  # noqa: PLR0911, PLR0912 - each rejection preserves a distinct security reason.
@@ -191,6 +204,10 @@ def check_remotes(config: Config, remotes: Iterable[str] | None = None) -> GateR
     """
     try:
         raw_allowlist = config.require("remotes.allowlist", clause=_CLAUSE)
+        known_hosts = {
+            str(host).strip().casefold()
+            for host in config.require("remotes.known_hosts", clause=_CLAUSE)
+        }
     except Exception as exc:
         return GateResult.blocked(
             "remotes", summary="remote policy unavailable", reason=str(exc), clause=_CLAUSE
@@ -203,9 +220,13 @@ def check_remotes(config: Config, remotes: Iterable[str] | None = None) -> GateR
             clause=_CLAUSE,
         )
     allowed: set[str] = set()
+    allowed_hosts: set[str] = set()
     for item in raw_allowlist:
         normal = normalize_remote_url(str(item))
         if normal.is_blocked or normal.destination is None:
+            if _is_known_host_allowlist_entry(item, known_hosts):
+                allowed_hosts.add(str(item).strip().casefold())
+                continue
             return GateResult.blocked(
                 "remotes",
                 summary="remote allowlist is invalid",
@@ -227,6 +248,7 @@ def check_remotes(config: Config, remotes: Iterable[str] | None = None) -> GateR
     findings: list[Finding] = []
     for index, raw in enumerate(values, start=1):
         normal = normalize_remote_url(raw)
+        destination = normal.destination or ""
         if normal.is_blocked:
             findings.append(
                 Finding(
@@ -237,7 +259,10 @@ def check_remotes(config: Config, remotes: Iterable[str] | None = None) -> GateR
                     disposition="Replace the remote with an approved credential-free URL.",
                 )
             )
-        elif normal.destination not in allowed:
+        elif (
+            destination not in allowed
+            and destination.split("/", maxsplit=1)[0] not in allowed_hosts
+        ):
             findings.append(
                 Finding(
                     id=f"REMOTE-{index:03d}",
@@ -260,5 +285,8 @@ def check_remotes(config: Config, remotes: Iterable[str] | None = None) -> GateR
         "remotes",
         summary="all remotes are approved",
         clause=_CLAUSE,
-        measurements={"allowlist_size": len(allowed)},
+        measurements={
+            "allowlist_size": len(allowed) + len(allowed_hosts),
+            "host_allowlist": sorted(allowed_hosts),
+        },
     )

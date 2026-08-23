@@ -21,6 +21,17 @@ __all__ = ["CoverageFloorGate", "MakefileAuthorityGate", "ZeroSkipAuditGate"]
 _SKIP_COMMENT: Final = re.compile(r"@governance-skip:\s*(\S+)\s+(.+)")
 
 
+def _branch_percentage(summary: dict[str, Any]) -> float:
+    """Read legacy or current coverage.py branch summaries without losing a zero-branch pass."""
+    legacy = summary.get("percent_covered_branches")
+    if legacy is not None:
+        return float(legacy)
+    total = float(summary.get("num_branches", 0))
+    if total == 0:
+        return 100.0
+    return 100.0 * float(summary.get("covered_branches", 0)) / total
+
+
 def _decisions(config: Config) -> set[str]:
     """Extract all policy-shaped decision ids from the configured decision log."""
     log = config.resolve_path("traceability.decision_log_path")
@@ -83,7 +94,7 @@ class CoverageFloorGate(Gate):
         for filename, detail in sorted(files.items()):
             summary: dict[str, Any] = detail.get("summary", {})
             lines = float(summary.get("percent_covered", -1))
-            branches = float(summary.get("percent_covered_branches", -1))
+            branches = _branch_percentage(summary)
             if lines < line_floor:
                 findings.append(
                     Finding(

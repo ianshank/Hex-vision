@@ -142,9 +142,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return int(exc.exit_code)
     except SystemExit as exc:
-        # argparse uses SystemExit for malformed invocations. Returning the
-        # documented usage code lets embedders test it and prevents a no-argument
-        # direct call from looking like a successful no-op.
+        # argparse raises SystemExit for two different situations and they must
+        # not collapse into one code. A malformed invocation carries a non-zero
+        # code and becomes USAGE, which prevents a no-argument direct call from
+        # looking like a successful no-op. But --help and --version also raise
+        # SystemExit, with code 0, and those are successful requests: reporting
+        # a failure for `hexvision --help` would make the CLI unusable inside a
+        # shell that checks exit status.
+        if exc.code in (0, None):
+            return int(ExitCode.OK)
         return int(ExitCode.USAGE)
     except Exception as exc:
         print(f"hexvision blocked: {type(exc).__name__}: {exc}", file=sys.stderr)

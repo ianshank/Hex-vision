@@ -84,7 +84,7 @@ def test_more_invalid_remote_forms_block(raw: str) -> None:
 
 def test_remote_policy_empty_allowlist_blocks(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """A missing destination policy must not become an allow-all rule."""
-    config = make_config(tmp_repo())
+    config = make_config(tmp_repo("[remotes]\nallowlist=[]\n"))
     assert check_remotes(config, ["github.com/org/repo"]).status.value == "blocked"
 
 
@@ -92,6 +92,13 @@ def test_remote_policy_accepts_allowed(make_config, tmp_repo) -> None:  # type: 
     """A normal configured destination passes policy comparison."""
     config = make_config(tmp_repo("[remotes]\nallowlist=['github.com/org/repo']\n"))
     assert check_remotes(config, ["https://GitHub.com/Org/Repo.git"]).status.value == "passed"
+
+
+def test_remote_policy_accepts_configured_registry_host(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """A governed registry host may approve its repository paths without weakening Git parsing."""
+    result = check_remotes(make_config(tmp_repo()), ["https://huggingface.co/owner/model.git"])
+    assert result.status.value == "passed"
+    assert result.measurements["host_allowlist"] == ["huggingface.co"]
 
 
 @dataclass(frozen=True)

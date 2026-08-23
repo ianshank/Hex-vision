@@ -28,7 +28,7 @@ def test_dispatches_top_level_gate_commands(
 ) -> None:
     """Each top-level route invokes the corresponding behavioral implementation."""
     result = GateResult.passed("x", summary="ok")
-    monkeypatch.setattr(cli, attribute, lambda *unused, **kwargs: result)
+    monkeypatch.setattr(cli, attribute, lambda *_unused, **_kwargs: result)
     assert cli._dispatch(cast(argparse.Namespace, args), cast(Config, SimpleNamespace())) is result
 
 
@@ -41,7 +41,7 @@ def test_dispatches_pack_and_config_commands(monkeypatch: pytest.MonkeyPatch) ->
     )
     assert listed.measurements["data"] == ["fake"]
     explanation = SimpleNamespace(key="x", value=1, layer="repo", source="file", shadowed=())
-    config = SimpleNamespace(explain=lambda unused: explanation)
+    config = SimpleNamespace(explain=lambda _unused: explanation)
     explained = cli._dispatch(
         cast(
             argparse.Namespace, SimpleNamespace(command="config", config_command="explain", key="x")
@@ -54,7 +54,7 @@ def test_dispatches_pack_and_config_commands(monkeypatch: pytest.MonkeyPatch) ->
 def test_dispatches_all_contract_gate_routes(monkeypatch: pytest.MonkeyPatch) -> None:
     """Coverage, zero-skip, and Makefile paths instantiate the intended gate."""
     expected = GateResult.passed("x", summary="ok")
-    monkeypatch.setattr(cli, "run_gate", lambda gate, config: expected)
+    monkeypatch.setattr(cli, "run_gate", lambda _gate, _config: expected)
     config = SimpleNamespace()
     assert (
         cli._dispatch(

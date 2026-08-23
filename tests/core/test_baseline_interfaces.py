@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import io
 import json
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from hexvision.config import Config, load_config
-from hexvision.errors import FrozenKeyOverrideError, GateBlockedError, GateFailure, MissingKeyError
+from hexvision.errors import (
+    ConfigError,
+    FrozenKeyOverrideError,
+    GateBlockedError,
+    GateFailure,
+    MissingKeyError,
+)
 from hexvision.gates.base import Gate, run_gate, run_gates
 from hexvision.gates.model import Finding, GateResult, GateStatus, Severity
 from hexvision.observability import JsonFormatter, configure_logging, get_logger, log_verdict
@@ -86,7 +92,7 @@ def test_config_environment_types_and_section_validation(tmp_path: Path) -> None
     assert config.get("sample.number") == 7
     assert config.get("sample.flag") is True
     scalar = load_config(root=tmp_path, overrides={"sample": "wrong"})
-    with pytest.raises(Exception):
+    with pytest.raises(ConfigError):
         scalar.section("sample")
 
 

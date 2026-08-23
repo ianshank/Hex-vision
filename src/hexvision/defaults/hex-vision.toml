@@ -49,6 +49,12 @@ pre_pr_order = [
   "install", "lint", "types", "cov", "secrets", "specs", "audit", "remotes",
   "projections", "traceability",
 ]
+# Conformance reads the authoritative prerequisite chain from this repository
+# artifact; packs must delegate to it instead of copying the chain themselves.
+makefile_path = "Makefile"
+# The pack's pre-pr command must use this executable to delegate to the
+# configured Makefile target rather than inline a second orchestration chain.
+make_executable = "make"
 # Gates that must fail when their TOOL is absent, separately from failing when
 # their CHECK fails. A security control with a silent degraded mode produces a
 # green tick and no protection.
@@ -64,11 +70,21 @@ inv_3 = "Exactly one URL normalizer, shared by the guard, the hook and CI."
 inv_4 = "Git hooks are installed by a script CI itself runs."
 inv_5 = "Gates are invoked only through the Makefile, never raw in CI."
 
+# Each invariant is made auditable by the core gate clause or Makefile target
+# that enforces it; domain packs must not pretend to own repository-wide controls.
+[contract.invariant_enforcement]
+inv_1 = "secrets"
+inv_2 = "INV-2"
+inv_3 = "remotes"
+inv_4 = "install"
+inv_5 = "INV-5"
+
 # --------------------------------------------------------------------------
 # INV-3: destination allowlist. An empty allowlist is BLOCK, never ALLOW.
 # --------------------------------------------------------------------------
 [remotes]
-allowlist = []
+# Adding a destination is a governed decision requiring a decision-log entry.
+allowlist = ["github.com/ianshank/hex-vision", "huggingface.co"]
 # A bare username is not a credential: `ssh://git@github.com/org/repo` is the
 # most common SSH spelling and must be allowed. Only the `user:token@` form is a
 # finding, and it returns BLOCK rather than being normalized away, so the secret
@@ -105,6 +121,9 @@ decision_id_patterns = ["DEC-\\d+", "RB-\\d+[a-z]?", "G-[A-Z]+", "S\\d+\\.\\d+"]
 # Requirement references in executable tests use their own configured grammar;
 # decision identifiers cannot safely double as requirement identifiers.
 requirement_id_patterns = ["R-\\d+"]
+# The validator test necessarily embeds synthetic requirement-shaped identifiers;
+# keep this narrow exclusion auditable while citations elsewhere remain enforced.
+ignored_test_path_globs = ["tests/governance/test_validate_specs.py"]
 
 # --------------------------------------------------------------------------
 # Single-source projections: specs own scope, everything else is generated.

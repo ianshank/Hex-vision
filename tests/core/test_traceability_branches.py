@@ -37,13 +37,13 @@ def test_collects_distinguishes_missing_tool_and_uncollected(
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError()),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()),
     )
     assert traceability._collects(config, "x") is None
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args, 1, "", ""),
+        lambda *args, **_kwargs: subprocess.CompletedProcess(args, 1, "", ""),
     )
     assert traceability._collects(config, "x") is False
 
@@ -61,15 +61,16 @@ def test_green_traceability_collection_paths(
     (root / "docs" / "decision-log.md").write_text("DEC-1\n", encoding="utf-8")
     (root / "tests" / "test_x.py").write_text("# R-1\n", encoding="utf-8")
     (root / "traceability" / "REQUIREMENT-TRACEABILITY.md").write_text(
-        "| requirement id | statement | status | test node id | inherits-from | decision ref | notes |\n"
+        "| requirement id | statement | status | test node id "
+        "| inherits-from | decision ref | notes |\n"
         "| --- | --- | --- | --- | --- | --- | --- |\n"
         "| R-1 | s | Green | tests/test_x.py::test_x | | | |\n",
         encoding="utf-8",
     )
     config = make_config(root, None)
-    monkeypatch.setattr(traceability, "_collects", lambda config, node: True)
+    monkeypatch.setattr(traceability, "_collects", lambda _config, _node: True)
     assert traceability.check_traceability(config).status.value == "passed"
-    monkeypatch.setattr(traceability, "_collects", lambda config, node: None)
+    monkeypatch.setattr(traceability, "_collects", lambda _config, _node: None)
     assert traceability.check_traceability(config).status.value == "blocked"
-    monkeypatch.setattr(traceability, "_collects", lambda config, node: False)
+    monkeypatch.setattr(traceability, "_collects", lambda _config, _node: False)
     assert traceability.check_traceability(config).status.value == "failed"

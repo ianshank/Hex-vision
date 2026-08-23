@@ -11,7 +11,12 @@ from typing import Any
 import pytest
 
 from hexvision.config import Config
-from hexvision.gates.contract import CoverageFloorGate, MakefileAuthorityGate, ZeroSkipAuditGate
+from hexvision.gates.contract import (
+    CoverageFloorGate,
+    MakefileAuthorityGate,
+    ZeroSkipAuditGate,
+    _branch_percentage,
+)
 from hexvision.projections import check_projections, render_projections
 
 
@@ -59,6 +64,17 @@ def test_projection_render_is_deterministic(make_config, tmp_repo, monkeypatch) 
     assert render_projections(config) == render_projections(config)
 
 
+def test_projection_loads_repo_data_module_without_pythonpath(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """The console command can load its configured repository planning module directly."""
+    root = tmp_repo(
+        "[projections]\ndata_module='fake_data'\n[[projections.outputs]]\n"
+        "name='one'\npath='out.csv'\nrenderer='jira_csv'\n"
+    )
+    _module(root)
+    sys.modules.pop("fake_data", None)
+    assert check_projections(make_config(root), write=True).status.value == "passed"
+
+
 def test_coverage_gate_reports_each_floor(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """Line and branch deficits are both reported rather than stopping at one file."""
     root = tmp_repo()
@@ -78,6 +94,13 @@ def test_coverage_gate_reports_each_floor(make_config, tmp_repo) -> None:  # typ
     result = CoverageFloorGate().check(make_config(root, None))
     assert result.status.value == "failed"
     assert len(result.findings) == 2
+
+
+def test_branch_percentage_supports_current_and_legacy_coverage_json() -> None:
+    """A no-branch file is fully covered; current and legacy JSON schemas agree."""
+    assert _branch_percentage({"num_branches": 0, "covered_branches": 0}) == 100
+    assert _branch_percentage({"num_branches": 4, "covered_branches": 3}) == 75
+    assert _branch_percentage({"percent_covered_branches": 75}) == 75
 
 
 def test_coverage_gate_blocks_missing_report(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
@@ -117,7 +140,9 @@ def test_projections_block_unknown_renderer_and_malformed_data(
     sys.modules.pop("bad_data", None)
     assert check_projections(make_config(root, None)).status.value == "blocked"
     (root / "bad_data.py").write_text(
-        "def data():\n return {'change_id':'x','generated_from':'x','milestones':[],'requirements':[]}\n",
+        "def data():\n return {\n"
+        "  'change_id':'x','generated_from':'x','milestones':[],'requirements':[]\n"
+        " }\n",
         encoding="utf-8",
     )
     sys.modules.pop("bad_data", None)

@@ -7,16 +7,23 @@ commands but cannot silently omit common controls or weaken their failure modes.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 from typing import Final
 
 from hexvision.config import Config
+from hexvision.gates.contract import MakefileAuthorityGate, ZeroSkipAuditGate
 from hexvision.gates.model import Finding, GateResult, Severity
 from hexvision.packs.base import Pack, TargetSpec
 
 __all__ = ["check_pack"]
 
 _CLAUSE: Final = "CONFORMANCE"
+# A target's spelling is a structural part of Contract v1.1, not an operational
+# policy value; the configured Makefile path and executable provide its runtime
+# context.
+_PRE_PR_TARGET: Final = "pre-pr"
+_MAKE_RULE: Final = re.compile(r"^(?P<target>[A-Za-z0-9_.-]+)\s*:(?P<prerequisites>.*)$")
 
 
 def _finding(number: int, message: str, disposition: str, *, blocker: bool = False) -> Finding:
@@ -51,7 +58,50 @@ def _has_forbidden_flag(spec: TargetSpec, flags: list[str]) -> str | None:
     return None
 
 
-def check_pack(  # noqa: PLR0912 - the contract deliberately has eight independent clauses.
+def _invariant_identifier(value: str) -> str:
+    """Canonicalize config keys and clause IDs in the one place they meet.
+
+    Invariant keys are TOML-friendly ``inv_2`` spellings while gate clauses use
+    the operator-facing ``INV-2`` form. Normalizing here keeps every subsequent
+    conformance comparison exact and prevents scattered case/underscore fixes.
+    """
+    return value.strip().upper().replace("_", "-")
+
+
+def _makefile_prerequisites(path: Path, target: str) -> tuple[str, ...] | None:
+    """Return one Makefile target's ordered prerequisites without recipe comments.
+
+    Only the simple target declaration needed by the contract is interpreted;
+    recipes are deliberately not executed or evaluated while conformance runs.
+    Continuation lines are joined first, so a maintained multi-line ``pre-pr``
+    declaration receives the same ordering check as the compact project form.
+    """
+    logical_lines: list[str] = []
+    pending = ""
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.rstrip()
+        if line.endswith("\\"):
+            pending += f"{line[:-1]} "
+            continue
+        logical_lines.append(f"{pending}{line}")
+        pending = ""
+    if pending:
+        logical_lines.append(pending)
+    for line in logical_lines:
+        if line.startswith("\t"):
+            continue
+        match = _MAKE_RULE.match(line.split("#", maxsplit=1)[0].strip())
+        if match and match.group("target") == target:
+            return tuple(match.group("prerequisites").split())
+    return None
+
+
+def _core_contract_gates() -> tuple[ZeroSkipAuditGate | MakefileAuthorityGate, ...]:
+    """Return repository-wide invariant gates that every pack inherits."""
+    return (ZeroSkipAuditGate(), MakefileAuthorityGate())
+
+
+def check_pack(  # noqa: PLR0912, PLR0915 - each contract clause reports independently.
     config: Config, pack: Pack
 ) -> GateResult:
     """Return all conformance findings rather than hiding later violations behind one."""
@@ -64,8 +114,11 @@ def check_pack(  # noqa: PLR0912 - the contract deliberately has eight independe
         )
         must_degrade = set(config.require("contract.degrade_loudly", clause=_CLAUSE))
         invariants = set(config.section("contract.invariants"))
+        enforcement = config.section("contract.invariant_enforcement")
         flags = list(config.require("contract.forbidden_threshold_flags", clause=_CLAUSE))
         source_root = config.resolve_path("contract.source_path", clause=_CLAUSE)
+        makefile_path = config.resolve_path("contract.makefile_path", clause=_CLAUSE)
+        make_executable = str(config.require("contract.make_executable", clause=_CLAUSE))
     except Exception as exc:
         return GateResult.blocked(
             "conformance", summary="contract policy unavailable", reason=str(exc), clause=_CLAUSE
@@ -81,12 +134,29 @@ def check_pack(  # noqa: PLR0912 - the contract deliberately has eight independe
             )
         )
     pre_pr = targets.get("pre-pr")
-    if pre_pr is not None and tuple(pre_pr.command) != tuple(order):
+    if pre_pr is not None and tuple(pre_pr.command) != (make_executable, _PRE_PR_TARGET):
         findings.append(
             _finding(
                 1,
-                "pre-pr command does not exactly chain contract.pre_pr_order",
-                "Set the pre-pr command to the configured target order.",
+                "pack pre-pr target does not delegate through the configured Makefile executable",
+                "Set the pre-pr command to the configured Makefile executable and pre-pr target.",
+            )
+        )
+    try:
+        makefile_order = _makefile_prerequisites(makefile_path, _PRE_PR_TARGET)
+    except OSError as exc:
+        return GateResult.blocked(
+            "conformance",
+            summary="Makefile cannot be inspected",
+            reason=str(exc),
+            clause=_CLAUSE,
+        )
+    if makefile_order != tuple(order):
+        findings.append(
+            _finding(
+                9,
+                ("Makefile pre-pr prerequisites do not exactly match contract.pre_pr_order"),
+                "Set the Makefile pre-pr prerequisites to contract.pre_pr_order in order.",
             )
         )
     for name in sorted(must_fail_closed):
@@ -135,15 +205,44 @@ def check_pack(  # noqa: PLR0912 - the contract deliberately has eight independe
             reason=str(exc),
             clause=_CLAUSE,
         )
-    claimed = {gate.clause for gate in domain_gates if gate.clause}
-    for invariant in sorted(invariants - claimed):
-        findings.append(
-            _finding(
-                5,
-                f"no domain gate claims invariant {invariant!r}",
-                "Provide a gate with this invariant as its clause.",
+    gate_clauses = {
+        _invariant_identifier(gate.clause)
+        for gate in (*_core_contract_gates(), *domain_gates)
+        if gate.clause
+    }
+    target_names = {target.casefold() for target in targets}
+    invariant_mapping = {
+        _invariant_identifier(str(invariant)): str(mechanism)
+        for invariant, mechanism in enforcement.items()
+    }
+    for configured_invariant in sorted(invariants):
+        invariant = _invariant_identifier(configured_invariant)
+        mechanism = invariant_mapping.get(invariant)
+        if mechanism is None:
+            findings.append(
+                _finding(
+                    5,
+                    (
+                        f"invariant {invariant!r} has no invariant_enforcement entry; "
+                        "its enforcement mechanism is unspecified"
+                    ),
+                    "Map this invariant to an existing core/domain gate clause or pack target.",
+                )
             )
-        )
+        elif (
+            _invariant_identifier(mechanism) not in gate_clauses
+            and mechanism.casefold() not in target_names
+        ):
+            findings.append(
+                _finding(
+                    5,
+                    (
+                        f"invariant {invariant!r} names enforcement mechanism {mechanism!r}, "
+                        "but no core/domain gate clause or pack target provides it"
+                    ),
+                    "Declare the named gate clause or Makefile target, or correct the mapping.",
+                )
+            )
     for gate in domain_gates:
         if not gate.clause or not gate.description:
             findings.append(
@@ -183,5 +282,9 @@ def check_pack(  # noqa: PLR0912 - the contract deliberately has eight independe
         "conformance",
         summary=f"pack {pack.name} conforms",
         clause=_CLAUSE,
-        measurements={"targets": len(targets), "domain_gates": len(domain_gates)},
+        measurements={
+            "targets": len(targets),
+            "domain_gates": len(domain_gates),
+            "invariant_enforcement": invariant_mapping,
+        },
     )

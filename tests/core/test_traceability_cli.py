@@ -61,6 +61,28 @@ def test_traceability_missing_test_citation(make_config, tmp_repo) -> None:  # t
     assert check_traceability(make_config(root)).status.value == "failed"
 
 
+def test_traceability_ignores_only_configured_validator_fixture(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """Keep synthetic parser fixtures visible while enforcing all other citations."""
+    root = tmp_repo()
+    _trace_repo(root, "| R-1 | s | Red | | | | |\n")
+    fixture = root / "tests" / "governance"
+    fixture.mkdir()
+    ignored_requirement = f"R-{100}"
+    (fixture / "test_validate_specs.py").write_text(f"# {ignored_requirement}\n", encoding="utf-8")
+    result = check_traceability(make_config(root))
+    assert result.status.value == "passed"
+    assert result.measurements["ignored_test_path_globs"] == [
+        "tests/governance/test_validate_specs.py"
+    ]
+    outside_requirement = f"R-{101}"
+    (root / "tests" / "test_outside_fixture.py").write_text(
+        f"# {outside_requirement}\n", encoding="utf-8"
+    )
+    result = check_traceability(make_config(root))
+    assert result.status.value == "failed"
+    assert any(outside_requirement in finding.message for finding in result.findings)
+
+
 def test_cli_json_config_dump(monkeypatch, tmp_path, capsys) -> None:  # type: ignore[no-untyped-def]
     """CLI emits one JSON result object without diagnostic text on stdout."""
     (tmp_path / "pyproject.toml").write_text(

@@ -10,7 +10,7 @@ import pytest
 
 from hexvision.config import load_config
 from hexvision.gates.model import GateStatus, Severity
-from hexvision.packs.jetson import JetsonPack, pack
+from hexvision.packs.jetson import JetsonPack, _strings, pack
 from hexvision.robotics.hardware_in_loop import HardwareInLoopGate
 
 
@@ -108,3 +108,10 @@ def test_jetson_pack_metadata_has_real_reference_docs() -> None:
     """Pack metadata gives adopters the vendor and runtime documentation it references."""
     assert pack.meta.name == "jetson"
     assert all(url.startswith("https://") for url in pack.meta.reference_docs)
+
+
+@pytest.mark.parametrize("value", [[], [""]])
+def test_jetson_command_vectors_must_be_non_empty_strings(value: list[str]) -> None:
+    """An empty command cannot satisfy the pack's fail-closed target contract."""
+    with pytest.raises(ValueError, match="non-empty string list"):
+        _strings(value)

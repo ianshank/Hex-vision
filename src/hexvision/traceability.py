@@ -65,11 +65,14 @@ def _decision_ids(config: Config) -> set[str]:
     return {match.group(0) for pattern in patterns for match in re.finditer(str(pattern), content)}
 
 
-def _test_citations(config: Config, patterns: list[str]) -> set[str]:
-    """Find requirement identifiers cited in test source, including nested test files."""
+def _test_citations(config: Config, patterns: list[str], ignored_globs: list[str]) -> set[str]:
+    """Find requirement identifiers outside configured synthetic-fixture exclusions."""
     tests_path = config.resolve_path("traceability.tests_path", clause=_CLAUSE)
     cited: set[str] = set()
     for test_file in tests_path.rglob("*.py"):
+        relative = test_file.relative_to(config.root)
+        if any(relative.match(pattern) for pattern in ignored_globs):
+            continue
         text = test_file.read_text(encoding="utf-8")
         for pattern in patterns:
             cited.update(match.group(0) for match in re.finditer(str(pattern), text))
@@ -112,6 +115,9 @@ def check_traceability(  # noqa: PLR0912 - independent evidence rules must all r
         )
         requirement_patterns = list(
             config.require("traceability.requirement_id_patterns", clause=_CLAUSE)
+        )
+        ignored_test_path_globs = list(
+            config.require("traceability.ignored_test_path_globs", clause=_CLAUSE)
         )
     except (OSError, ValueError, KeyError, re.error) as exc:
         return GateResult.blocked(
@@ -220,7 +226,7 @@ def check_traceability(  # noqa: PLR0912 - independent evidence rules must all r
                     )
                 )
     try:
-        cited = _test_citations(config, requirement_patterns)
+        cited = _test_citations(config, requirement_patterns, ignored_test_path_globs)
     except OSError as exc:
         return GateResult.blocked(
             "traceability", summary="test evidence cannot be read", reason=str(exc), clause=_CLAUSE
@@ -237,16 +243,21 @@ def check_traceability(  # noqa: PLR0912 - independent evidence rules must all r
             )
         )
     _LOG.info("traceability checked", extra={"rows": len(rows), "findings": len(findings)})
+    measurements = {
+        "rows": len(rows),
+        "ignored_test_path_globs": ignored_test_path_globs,
+    }
     if findings:
         return GateResult.failed(
             "traceability",
             summary="traceability matrix has findings",
             findings=findings,
             clause=_CLAUSE,
+            measurements=measurements,
         )
     return GateResult.passed(
         "traceability",
         summary="traceability matrix is complete",
         clause=_CLAUSE,
-        measurements={"rows": len(rows)},
+        measurements=measurements,
     )

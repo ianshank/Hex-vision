@@ -1,4 +1,10 @@
 # Project Charter — Hex-vision
+Charter version: 1.0
+<!-- The line above is read mechanically by tests/governance/test_skill_freshness.py,
+     which fails when the governance skill's pinned charter version drifts from it.
+     It deliberately carries no markdown emphasis: the matcher reads a plain
+     `version: N.N` field, and bold markers would hide it. Keep this exact form.
+     A version an agent can only recover by reading prose goes stale silently. -->
 **Change ID:** `add-robotics-governance-harness` | **Charter v1.0** | 2026-08-22
 **Source documents:** Gate Harness Contract v1.1; `openspec/changes/add-robotics-governance-harness/`
 **Executor:** Hex-vision contributors, operating under the change package above.

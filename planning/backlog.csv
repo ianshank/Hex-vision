@@ -1,22 +1,22 @@
-# GENERATED FROM planning/roadmap_data.py; DO NOT HAND-EDIT. Regenerate with: hexvision projections --write
-Issue Type,Summary,Description,Status,Original Estimate,Labels,Depends On
-Task,"[M0] 0.1 Write or verify failing configuration scenarios","Requirements: R-1; R-2",in-progress,4h,hex-vision M0,
-Task,"[M0] 0.2 Deliver layered configuration and frozen-key mechanism","Requirements: R-1; R-2",done,8h,hex-vision M0,
-Task,"[M0] 0.3 Deliver committed shared fail-closed foundations","Requirements: ",done,4h,hex-vision M0,
-Task,"[M0] 0.4 Record archive gap and re-baseline","Requirements: ",done,2h,hex-vision M0,
-Task,"[M0] 0.5 Update M0 traceability","Requirements: R-1; R-2",todo,2h,hex-vision M0,0.1
-Task,"[M1] 1.1 Write failing contract-control tests","Requirements: R-3; R-4; R-8; R-9; R-18",in-progress,8h,hex-vision M1,
-Task,"[M1] 1.2 Implement core contract-control modules","Requirements: R-3; R-4; R-8; R-9; R-18",in-progress,16h,hex-vision M1,1.1
-Task,"[M1] 1.3 Update M1 traceability","Requirements: R-3; R-4; R-8; R-9; R-18",todo,4h,hex-vision M1,1.2
-Task,"[M2] 2.1 Write failing traceability and projection tests","Requirements: R-5; R-6; R-7",in-progress,6h,hex-vision M2,
-Task,"[M2] 2.2 Implement traceability lint and projections","Requirements: R-5; R-6; R-7",in-progress,10h,hex-vision M2,2.1
-Task,"[M2] 2.3 Update M2 traceability","Requirements: R-5; R-6; R-7",todo,4h,hex-vision M2,2.2
-Task,"[M3] 3.1 Write failing edge-AI evidence-gate tests","Requirements: R-10; R-11; R-12",in-progress,10h,hex-vision M3,
-Task,"[M3] 3.2 Implement edge-AI evidence gates and examples","Requirements: R-10; R-11; R-12",in-progress,18h,hex-vision M3,3.1
-Task,"[M3] 3.3 Update M3 traceability","Requirements: R-10; R-11; R-12",todo,4h,hex-vision M3,3.2
-Task,"[M4] 4.1 Write failing safety and HIL tests","Requirements: R-13; R-14; R-15",in-progress,10h,hex-vision M4,
-Task,"[M4] 4.2 Implement safety-envelope and HIL gates","Requirements: R-13; R-14; R-15",in-progress,14h,hex-vision M4,4.1
-Task,"[M4] 4.3 Update M4 traceability","Requirements: R-13; R-14; R-15",todo,4h,hex-vision M4,4.2
-Task,"[M5] 5.1 Write failing publication and non-commanding-boundary tests","Requirements: R-16; R-17",in-progress,6h,hex-vision M5,
-Task,"[M5] 5.2 Integrate hooks, CI, skills, and peer review","Requirements: R-16; R-17",in-progress,10h,hex-vision M5,"5.1; 1.2; 2.2; 3.2; 4.2"
-Task,"[M5] 5.3 Update final traceability and regenerate projections","Requirements: R-16; R-17",todo,4h,hex-vision M5,5.2
+# Generated from planning.roadmap_data; do not edit directly.
+id,milestone,title,status,estimate_hours,requirement_ids,depends_on
+0.1,M0,Write or verify failing configuration scenarios,in-progress,4,R-1 R-2,
+0.2,M0,Deliver layered configuration and frozen-key mechanism,done,8,R-1 R-2,
+0.3,M0,Deliver committed shared fail-closed foundations,done,4,,
+0.4,M0,Record archive gap and re-baseline,done,2,,
+0.5,M0,Update M0 traceability,todo,2,R-1 R-2,0.1
+1.1,M1,Write failing contract-control tests,in-progress,8,R-18 R-3 R-4 R-8 R-9,
+1.2,M1,Implement core contract-control modules,in-progress,16,R-18 R-3 R-4 R-8 R-9,1.1
+1.3,M1,Update M1 traceability,todo,4,R-18 R-3 R-4 R-8 R-9,1.2
+2.1,M2,Write failing traceability and projection tests,in-progress,6,R-5 R-6 R-7,
+2.2,M2,Implement traceability lint and projections,in-progress,10,R-5 R-6 R-7,2.1
+2.3,M2,Update M2 traceability,todo,4,R-5 R-6 R-7,2.2
+3.1,M3,Write failing edge-AI evidence-gate tests,in-progress,10,R-10 R-11 R-12,
+3.2,M3,Implement edge-AI evidence gates and examples,in-progress,18,R-10 R-11 R-12,3.1
+3.3,M3,Update M3 traceability,todo,4,R-10 R-11 R-12,3.2
+4.1,M4,Write failing safety and HIL tests,in-progress,10,R-13 R-14 R-15,
+4.2,M4,Implement safety-envelope and HIL gates,in-progress,14,R-13 R-14 R-15,4.1
+4.3,M4,Update M4 traceability,todo,4,R-13 R-14 R-15,4.2
+5.1,M5,Write failing publication and non-commanding-boundary tests,in-progress,6,R-16 R-17,
+5.2,M5,"Integrate hooks, CI, skills, and peer review",in-progress,10,R-16 R-17,1.2 2.2 3.2 4.2 5.1
+5.3,M5,Update final traceability and regenerate projections,todo,4,R-16 R-17,5.2

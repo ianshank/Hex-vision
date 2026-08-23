@@ -34,6 +34,13 @@ from pathlib import Path
 
 changes_dir = Path(sys.argv[1])
 requirement = re.compile(r"\b(R-[A-Za-z0-9][A-Za-z0-9.-]*)\b")
+requirements_heading = re.compile(
+    r"^##\s+(?:(?:ADDED|MODIFIED|REMOVED)\s+)?Requirements\s*$",
+    flags=re.IGNORECASE | re.MULTILINE,
+)
+scenario_heading = re.compile(r"^####\s+Scenario:.*$", flags=re.IGNORECASE | re.MULTILINE)
+when_line = re.compile(r"^-\s+\*\*WHEN\*\*", flags=re.IGNORECASE | re.MULTILINE)
+then_line = re.compile(r"^-\s+\*\*THEN\*\*", flags=re.IGNORECASE | re.MULTILINE)
 failures: list[str] = []
 seen: dict[str, Path] = {}
 changes = sorted(path for path in changes_dir.iterdir() if path.is_dir())
@@ -50,11 +57,17 @@ for change in changes:
         failures.append(f"{change.name}: missing specs/*.md")
     for spec in specs:
         text = spec.read_text(encoding="utf-8")
-        if "## Requirements" not in text:
-            failures.append(f"{spec}: missing ## Requirements")
-        if "## Acceptance criteria" not in text:
-            failures.append(f"{spec}: missing ## Acceptance criteria")
-        if not re.search(r"\bWHEN\b[\s\S]*?\bTHEN\b", text, flags=re.IGNORECASE):
+        if not requirements_heading.search(text):
+            failures.append(f"{spec}: missing Requirements heading")
+        scenarios = list(scenario_heading.finditer(text))
+        has_acceptance_scenario = False
+        for index, scenario in enumerate(scenarios):
+            end = scenarios[index + 1].start() if index + 1 < len(scenarios) else len(text)
+            scenario_text = text[scenario.start() : end]
+            if when_line.search(scenario_text) and then_line.search(scenario_text):
+                has_acceptance_scenario = True
+                break
+        if not has_acceptance_scenario:
             failures.append(f"{spec}: no WHEN/THEN scenario")
         for identifier in requirement.findall(text):
             prior = seen.get(identifier)

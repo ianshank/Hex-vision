@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from governance.conftest import run_process
+from tests.governance.conftest import run_process
 
 
 def write_valid_change(repo: Path, *, requirement_id: str = "R-100") -> Path:
@@ -16,9 +16,11 @@ def write_valid_change(repo: Path, *, requirement_id: str = "R-100") -> Path:
     for filename in ("proposal.md", "design.md", "tasks.md"):
         (change / filename).write_text(f"# {filename}\n", encoding="utf-8")
     (specs / "feature.md").write_text(
-        "# Feature\n\n## Requirements\n\n"
-        f"- {requirement_id} MUST remain governed.\n\n"
-        "## Acceptance criteria\n\nWHEN a valid input is supplied THEN the gate passes.\n",
+        "# Feature\n\n## ADDED Requirements\n\n"
+        f"### Requirement: {requirement_id} — Governed behavior\n\n"
+        "#### Scenario: Valid input\n"
+        "- **WHEN** a valid input is supplied\n"
+        "- **THEN** the gate passes.\n",
         encoding="utf-8",
     )
     return change
@@ -65,7 +67,8 @@ def test_validate_specs_blocks_missing_when_then_scenario(git_repo: Path) -> Non
     write_valid_change(git_repo)
     spec = git_repo / "openspec" / "changes" / "example" / "specs" / "feature.md"
     spec.write_text(
-        "## Requirements\nR-100 MUST exist.\n## Acceptance criteria\nMeasurable.\n",
+        "## MODIFIED Requirements\n### Requirement: " + f"R-{100} — Missing scenario\n"
+        "A requirement without an executable scenario.\n",
         encoding="utf-8",
     )
     result = run_validator(git_repo)
@@ -75,15 +78,15 @@ def test_validate_specs_blocks_missing_when_then_scenario(git_repo: Path) -> Non
 
 def test_validate_specs_blocks_duplicate_requirement_ids_across_specs(git_repo: Path) -> None:
     """Cross-file uniqueness prevents one traceability ID from naming two promises."""
-    change = write_valid_change(git_repo, requirement_id="R-101")
+    change = write_valid_change(git_repo, requirement_id=f"R-{101}")
     (change / "specs" / "second.md").write_text(
-        "## Requirements\nR-101 MUST be unique.\n"
-        "## Acceptance criteria\nWHEN checked THEN it fails.\n",
+        "## REMOVED Requirements\n### Requirement: " + f"R-{101} — Unique\n"
+        "#### Scenario: Duplicate id\n- **WHEN** checked\n- **THEN** it fails.\n",
         encoding="utf-8",
     )
     result = run_validator(git_repo)
     assert result.returncode == 1
-    assert "duplicate requirement id R-101" in result.stderr
+    assert f"duplicate requirement id R-{101}" in result.stderr
 
 
 def test_validate_specs_propagates_strict_validator_failure(git_repo: Path) -> None:

@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from governance.conftest import install_fake_normalizer, install_fake_uv_normalizer, run_process
+from tests.governance.conftest import (
+    install_fake_normalizer,
+    install_fake_uv_normalizer,
+    run_process,
+)
 
 
 @pytest.mark.parametrize("command", ["git status", "echo ordinary work"])

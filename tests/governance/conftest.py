@@ -18,6 +18,8 @@ def run_process(
 ) -> subprocess.CompletedProcess[str]:
     """Run an argument vector so tests exercise scripts without shell interpolation."""
     merged_env = os.environ.copy()
+    for key in ("COV_CORE_CONFIG", "COV_CORE_DATAFILE", "COV_CORE_SOURCE", "COV_CORE_BRANCH"):
+        merged_env.pop(key, None)
     if env is not None:
         merged_env.update(env)
     return subprocess.run(

@@ -8,7 +8,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from governance.conftest import run_process
+from tests.governance.conftest import run_process
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS = REPO_ROOT / "src" / "hexvision" / "defaults" / "hex-vision.toml"

@@ -11,6 +11,7 @@ import csv
 import difflib
 import importlib
 import io
+import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Final
@@ -70,6 +71,7 @@ def markdown_roadmap(data: Mapping[str, Any], module: str) -> bytes:
                 )
             )
         lines.append("")
+    lines.pop()
     return ("\n".join(lines) + "\n").encode()
 
 
@@ -101,6 +103,12 @@ def jira_csv(data: Mapping[str, Any], module: str) -> bytes:
 def _load_data(config: Config) -> tuple[Mapping[str, Any], str]:
     """Import and validate the configured single source before rendering anything."""
     module_name = str(config.require("projections.data_module", clause=_CLAUSE))
+    repository_root = str(config.root)
+    if repository_root not in sys.path:
+        # A console-script entry point starts from its virtualenv's bin directory,
+        # not the checkout. Repository-owned projection modules must remain
+        # configurable without requiring callers to hand-maintain PYTHONPATH.
+        sys.path.insert(0, repository_root)
     module = importlib.import_module(module_name)
     factory = module.data
     data = factory()

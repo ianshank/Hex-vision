@@ -82,7 +82,11 @@ class JetsonPack(Pack):
 
 def _strings(value: Any) -> tuple[str, ...]:
     """Validate configured argument vectors so pack execution cannot guess a command."""
-    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(item, str) and item for item in value)
+    ):
         raise ValueError("configured target command must be a non-empty string list")
     return tuple(value)
 
