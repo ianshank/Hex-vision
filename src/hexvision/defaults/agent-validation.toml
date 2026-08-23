@@ -1,0 +1,43 @@
+# Governed subagent and skill definition policy.
+#
+# This file deliberately owns the schema rather than Python.  Adding a required
+# field, changing an allowed type, or tightening a prose limit is a reviewed
+# policy change, not a test-code edit.
+
+[agent_validation]
+gate_name = "agent-validation"
+clause = "AQA-AGENT-VALIDATION"
+agent_directory = ".claude/agents"
+skill_directory = ".claude/skills"
+skill_filename = "SKILL.md"
+definition_suffix = ".md"
+frontmatter_delimiter = "---"
+makefile_path = "Makefile"
+cli_source_path = "src/hexvision/cli.py"
+description_min_length = 24
+description_max_length = 240
+name_pattern = "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+inline_code_pattern = "`(?P<reference>[^`\\n]+)`"
+path_reference_pattern = "^(?:\\.?\\.?/)?(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+(?:\\.[A-Za-z0-9_.-]+)?$"
+make_command_pattern = "^make\\s+(?P<target>[A-Za-z0-9_.-]+)(?:\\s|$)"
+cli_command_pattern = "^hexvision\\s+(?P<command>[A-Za-z0-9_.-]+)(?:\\s|$)"
+agent_reference_pattern = "@agent:(?P<reference>[a-z0-9]+(?:-[a-z0-9]+)*)"
+skill_reference_pattern = "@skill:(?P<reference>[a-z0-9]+(?:-[a-z0-9]+)*)"
+
+[agent_validation.schemas.agent]
+required_fields = { name = "string", description = "string", tools = "string" }
+
+[agent_validation.schemas.skill]
+required_fields = { name = "string", description = "string" }
+
+[agent_validation.findings]
+frontmatter = "AQA-DEF-FRONTMATTER"
+schema = "AQA-DEF-SCHEMA"
+name = "AQA-DEF-NAME"
+duplicate = "AQA-DEF-DUPLICATE"
+description = "AQA-DEF-DESCRIPTION"
+path = "AQA-DEF-PATH"
+make_target = "AQA-DEF-MAKE"
+cli_command = "AQA-DEF-CLI"
+agent_reference = "AQA-DEF-AGENT-REF"
+skill_reference = "AQA-DEF-SKILL-REF"

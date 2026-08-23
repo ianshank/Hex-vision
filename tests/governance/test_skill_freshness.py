@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from hexvision.agent_validation import validate_definitions
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL = REPO_ROOT / ".claude" / "skills" / "hex-vision-governance" / "SKILL.md"
 LOG = REPO_ROOT / "docs" / "decision-log.md"
@@ -73,3 +75,13 @@ def test_charter_version_pin_negative_control() -> None:
     match = CHARTER_VERSION.search("# Charter\nVersion: 1.1\n")
     assert match is not None
     assert match.group(1) != "1.0"
+
+
+def test_live_agents_and_skills_are_governed_definition_artifacts() -> None:
+    """The legacy freshness check is supplemented by structural schema and reference validation."""
+
+    result = validate_definitions(REPO_ROOT)
+
+    assert result.status.value == "passed"
+    assert int(result.exit_code) == 0
+    assert result.measurements["definitions"] >= 1
