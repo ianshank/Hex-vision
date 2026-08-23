@@ -49,6 +49,8 @@ The contract fixes the shared target names; packs provide their stack-specific c
 | `remotes` | Checks repository destinations against the shared normalizer and allowlist. |
 | `projections` | Detects drift in generated roadmap and backlog projections. |
 | `traceability` | Lints the requirement matrix against OpenSpec requirements and collecting tests. |
+| `agent-validation` | Validates every governed agent and skill definition, including that referenced paths, Make targets, CLI commands, and cross-references resolve. |
+| `domain-gates` | Executes every registered domain gate for each pack in the frozen active-pack allowlist. |
 | `guard-probe` | Shows the PreToolUse guard verdict for a supplied command. |
 | `pre-pr` | Runs the configured CI chain in the required order. |
 | `clean` | Removes generated local caches and reports. |

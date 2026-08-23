@@ -12,12 +12,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added Gate Harness Contract conformance, invariant negative probes, traceability linting, deterministic roadmap/backlog projections, and the Jetson reference pack with repository-evidence gates.
 - Added guarded public-publication assessment, a structured decision-log parser, and GitHub/Hugging Face publication assets.
 - Added native pre-commit and pre-push feedback loops, a reproducible container image definition, C4 architecture documentation, and quality-loop operating guidance.
+- Added release orchestration that executes every registered domain gate for each configured active pack, exposed as `hexvision pack gates --all-active` and `make domain-gates`, closing the gap where domain gates existed but no local or CI path invoked them.
+- Added deterministic validation of governed agent and skill definitions, wired as `make agent-validation`, a step in the configured release order, and its own CI job so the local and CI gate sets cannot drift.
+- Added a test asserting which interface owns the four-state verdict, pinning GNU make's collapsing of every recipe failure into its own exit status and naming the CLI as the authority.
 
 ### Changed
 
 - Made Makefile target invocation the local and CI orchestration authority, with CI jobs sequenced through target dependencies.
 - Made scanner installation and invocation release-binary based where Go is unavailable, with scanner identity verified from frozen configuration.
 - Made traceability evidence depend on source requirements, collected test nodes, and matching executable test markers rather than matrix prose alone.
+- Changed release aggregation so an authorised declared skip passes while remaining visible through a counted summary and a listing of each skip against its authorising decision, replacing a red exit that made the decision log decorative. An absence with no recorded authority fails and names its gate. Recorded as DEC-015.
 
 ### Fixed
 
@@ -25,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Preserved the four-state gate model in CLI reporting so `BLOCKED` is not reported as `FAILED` or as success.
 - Enforced decision-log semantic validity and remote URL component validation for publication checks.
 - Corrected coverage isolation and contract integration behavior.
+- Reported an absent hardware runner with no authorising decision as `BLOCKED` rather than as a declared skip, closing a path where an unowned absence presented itself as an approved one.
+- Repaired the shared Git pre-commit hook, which invoked a script present on only one branch and therefore blocked commits in every other worktree.
 
 ### Security
 

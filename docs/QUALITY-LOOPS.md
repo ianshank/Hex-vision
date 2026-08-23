@@ -15,37 +15,24 @@ The native installer supports linked worktrees through `git rev-parse --git-path
 
 ## Current enforcement and required parent wiring
 
-This workstream owns hooks and documents the integration contract but does not modify the concurrently owned Makefile or CI workflow. The existing `install` target already executes `scripts/install_hooks.sh`, so the new L1/L2 hooks become active through the existing installation flow.
+The `install` target executes `scripts/install_hooks.sh`, so the L1/L2 hooks become active through the existing installation flow.
 
-The release-orchestration remediation must add the all-active-packs domain-gate command to the Makefile and CI. Once its CLI surface is merged, wire it using the following exact shape (substitute only the confirmed command name if the orchestration implementation publishes a different documented surface):
+## Governed release order
 
-```make
-# Makefile: make the dynamic pack execution an explicit governed target.
-.PHONY: pack-gates
-pack-gates: ## Execute every configured active pack's registered domain gates
-	$(RUN) python -m $(PKG).cli gates --all-active-packs --json
+The configured order in `contract.pre_pr_order` is the single authority. The `make pre-pr` prerequisite list and the CI job graph are both checked against it by `test_makefile_and_ci_follow_the_configured_release_order`, so a target added in one place and not the others fails the suite rather than drifting silently. The order is:
 
-# Keep the prerequisite order byte-for-byte aligned with contract.pre_pr_order.
-pre-pr: install lint types cov secrets specs audit remotes projections traceability conformance pack-gates
+```
+install lint types cov secrets specs audit remotes projections agent-validation traceability conformance domain-gates
 ```
 
-```yaml
-# .github/workflows/ci.yml: add after the conformance job (or make conformance
-# depend on it if that is the agreed order), retaining Makefile authority.
-  pack-gates:
-    needs: conformance
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with: { persist-credentials: false }
-      - uses: astral-sh/setup-uv@e3f3cf96a6157d90bd3d29b2f7aa51de3ca0d90d # v5.4.0
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with: { python-version: "3.11" }
-      - run: make install
-      - run: make pack-gates
-```
+Two of these are release orchestration rather than per-pack targets, and neither appears in `contract.targets`, which remains the fifteen stack-pack target names:
 
-The parent must also add `"pack-gates"` to `contract.pre_pr_order` in the same relative position as the Make prerequisite and confirm that the conformance metadata accepts the expanded order. This is intentionally not a documentation-only promise: CI must invoke the Make target, not duplicate the raw CLI command.
+- `agent-validation` validates every governed agent and skill definition deterministically, checking frontmatter schemas, description bounds, and that referenced file paths, Make targets, CLI commands, and `@agent:`/`@skill:` references resolve against the real checkout. Adding an agent or skill therefore requires it to be valid, not merely present.
+- `domain-gates` executes every registered domain gate for each pack named in the frozen `orchestration.active_packs` allowlist. Before this existed, the five Jetson domain gates were reachable only from tests, so no local or CI path ran them against the repository.
+
+## A known limitation of make as the invocation authority
+
+Every CI job shells through `make`, and GNU make reports its own exit status for any failed recipe. The harness distinguishes `FAILED` (a gate looked and found a problem) from `BLOCKED` (a gate could not look), and that distinction does not survive the wrapper. `tests/aqa/test_exit_code_authority.py` pins this as a known property rather than leaving it as folklore: the CLI is the verdict authority, and `make` is a convenience wrapper whose exit code answers only whether the chain succeeded. Consume the CLI JSON when a caller needs the specific verdict.
 
 ## Container use
 

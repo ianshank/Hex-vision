@@ -5,17 +5,27 @@
 
 This document is deliberately forward-looking. It does not mark an item complete merely because an artifact exists; each item names the remaining deliverable, sequence, size, and milestone. The authoritative detailed scope remains the OpenSpec task list and generated planning projections.
 
+## Completed since the remediation plan was written
+
+These rows are closed by merged work on `main`, verified by running the gates rather than by the presence of an artifact.
+
+| Milestone | Landed | Evidence |
+| --- | --- | --- |
+| M1 / release orchestration | All-active-pack execution, a frozen `orchestration.active_packs` allowlist, `hexvision pack gates --all-active`, and `make domain-gates`, wired into `contract.pre_pr_order`, `make pre-pr`, and CI. | `make pre-pr` executes all five Jetson domain gates; a failing registered gate blocks the chain; an unconfigured external pack is ignored. |
+| M4 / safety correctness | Unavailable, timed-out, malformed, and unreadable safety baselines classified `BLOCKED` with bounded redacted diagnostics. | Tests assert status, finding ID, reason, and measurement per case. |
+| M1 / tool provenance | Unused policy leaves either removed or given real runtime readers; no environment substitution can claim strict validation. | `make specs` now reports degraded structural mode honestly instead of printing success. |
+| M3-M4 / boundary QA | Hermetic symlink, permission-denied, non-UTF-8, oversized-input, and concurrent-change fixtures across repository-evidence gates. | Semantic failure assertions rather than status-only assertions. |
+| AQA / agent governance | Deterministic agent and skill definition validation, wired as `make agent-validation`, a release-order step, and a CI job. | Six agents and three skills validated; order-authority tests fail if CI and the configured order diverge. |
+
 ## Sequence
 
 | Order | Milestone | Remaining work | Size | Exit evidence |
 | ---: | --- | --- | --- | --- |
-| 1 | M1 / release orchestration | Land all-active-pack execution, an explicit `active_packs` allowlist, and a pack-domain-gate CLI command; wire it into `contract.pre_pr_order`, `make pre-pr`, and CI. | L (2 PRs, 16–24 h) | A deliberately failing registered gate blocks the local chain and CI; an unconfigured external pack is ignored. |
-| 2 | M4 / safety correctness | Classify unavailable, timed-out, malformed, and unreadable safety baselines as `BLOCKED` with redacted diagnostics; retain a separately reviewed new-mission policy. | M (1–2 PRs, 12–16 h) | Tests assert status, finding ID, reason, measurement, and bounded diagnostics for every unavailable-baseline case. |
-| 3 | M1 / tool provenance | Remove or make authoritative the unused remote-password and HIL-absence configuration leaves; eliminate discard-only pack launcher reads and arbitrary strict-validator environment replacement. | M (1–2 PRs, 12–18 h) | A configuration-contract inventory maps every policy leaf to a real runtime reader; no environment tool substitution can claim strict validation. |
-| 4 | M3–M4 / boundary QA | Add hermetic symlink, permission-denied, Unicode/non-UTF-8, oversized-input, concurrent-change, and timeout fixtures across repository-evidence gates. | M (2 PRs, 16–24 h) | Each gate has semantic failure assertions, not status-only assertions, and the fixture suite remains parallel-safe. |
-| 5 | M5 / governed release loop | Merge the quality-loop wiring in [QUALITY-LOOPS.md](QUALITY-LOOPS.md), require the CI workflow in branch protection, and validate pre-push behavior in a disposable clone. | S (1 PR, 4–8 h) | Required CI covers the same configured chain as `make pre-pr`; hook bypass is documented and CI remains authoritative. |
-| 6 | M5 / planning truth | After items 1–4 have merged, reconcile OpenSpec checkboxes and `planning/roadmap_data.py` against collected traceability evidence; regenerate projections in the same change. | S (1 PR, 4–6 h) | `hexvision projections --write`, `make projections`, and `make traceability` are green with no completed work left marked open. |
-| 7 | Post-M5 hardening | Trial Ruff `ANN`, `PT`, and `TID` incrementally; then consider stricter MyPy `Any` controls at configuration and gate boundaries. | M (2–3 PRs, 12–20 h) | Each rule family is enabled with typed fixtures and no blanket exclusions. |
+| 1 | M5 / governed release loop | Push the repository, then require the CI workflow in branch protection and validate pre-push behavior in a disposable clone. Branch protection cannot be configured before a remote exists. | S (1 PR, 4-8 h) | Required CI covers the same configured chain as `make pre-pr`; hook bypass is documented and CI remains authoritative. |
+| 2 | M5 / verdict observability | Decide how CI observes the four-state model. Every CI job shells through `make`, and GNU make reports its own exit status for any failed recipe, so CI currently cannot distinguish `FAILED` from `BLOCKED`. Either have CI consume the CLI JSON verdict or document make as a convenience wrapper whose exit code is not the contract. | S (1 PR, 4-6 h) | A CI job proves a blocked gate is reported as blocked, or the contract documents make's limitation and names the CLI as authority. |
+| 3 | M5 / planning truth | Reconcile OpenSpec checkboxes and `planning/roadmap_data.py` against collected traceability evidence; regenerate projections in the same change. | S (1 PR, 4-6 h) | `make projections` and `make traceability` green with no completed work left marked open. |
+| 4 | Post-M5 hardening | Finish the Ruff `ANN`, `PT`, `TID` and stricter MyPy `Any` rollout at configuration and gate boundaries. | M (1-2 PRs, 8-16 h) | Each rule family enabled with typed fixtures and no blanket exclusions. |
+| 5 | M5 / container proof | Build and scan the image on a daemon-backed runner for `amd64` and `arm64`. The sandbox that produced this work has no container runtime, so the Dockerfile is validated structurally only. | S (1 PR, 4-6 h) | Both images build in CI and pass the secret and vulnerability scans. |
 
 ## Deferred by design
 
@@ -26,4 +36,4 @@ This document is deliberately forward-looking. It does not mark an item complete
 
 ## Ownership notes
 
-The release-orchestration, safety, configuration-provenance, and filesystem-boundary workstreams own the implementation portions of the first four rows. This infrastructure/documentation workstream supplies the hooks, container policy, C4 set, and the exact Make/CI wiring contract; it does not overwrite their concurrent source or test changes.
+The release-orchestration, safety, configuration-provenance, filesystem-boundary, and AQA workstreams have merged, so the remaining rows are owned by release engineering rather than split across parallel workstreams. Rows 1, 2, and 5 all depend on a remote and a CI runner existing, which is why they are sequenced ahead of the lint and planning work despite being smaller.
