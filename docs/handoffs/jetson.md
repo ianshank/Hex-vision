@@ -26,8 +26,11 @@
   `decision_id_pattern`, `baseline_command`, `git_timeout_seconds`,
   `permissive_directions`, `failsafe_strength`, and
   `numeric_limits.{rtl_battery_percent,max_tilt_deg,geofence_radius_m,max_altitude_m}`.
-- `robotics.hardware_in_loop.runners`, `decision_log_path`,
-  `decision_id_pattern`, and `timeout_seconds`.
+- `robotics.hardware_in_loop.runners` and `timeout_seconds`. (The gate's former
+  private `decision_log_path`/`decision_id_pattern` keys were removed by the
+  DEC-016 corrective action: absence authority now resolves through the shared
+  verifier using the frozen `decision_log` grammar and
+  `traceability.decision_id_patterns`.)
 - `packs.jetson.targets`, `tools`, and `degraded_rationale`. The Makefile is
   the authority for launcher construction (`PM`/`RUN`); this pack intentionally
   does not expose package-manager or runner configuration that it cannot enact.
