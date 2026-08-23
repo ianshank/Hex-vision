@@ -171,6 +171,7 @@ def test_shared_process_helper_removes_coverage_control_variables(
         ),
     ],
 )
+# Traceability: R-9 [Unresolvable authorization]
 def test_runtime_skip_guard_resolves_test_local_decisions(
     tmp_path: Path,
     scenario: SkipScenario,
@@ -285,6 +286,7 @@ def _run_zero_skip_child(
         "dynamic-ast-bypass",
     ),
 )
+# Traceability: R-9 [Unapproved skip]
 def test_terminal_accounting_rejects_every_skip_route(
     tmp_path: Path, source: str, reason: str
 ) -> None:
