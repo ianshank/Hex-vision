@@ -7,6 +7,7 @@ gates while preserving a misleadingly green core run.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from importlib import metadata
 from typing import Final, cast
 
@@ -70,6 +71,20 @@ def load(name: str) -> Pack:
     return pack
 
 
-def load_all() -> tuple[Pack, ...]:
-    """Load every advertised pack, refusing partial discovery on the first error."""
-    return tuple(load(name) for name in available())
+def load_all(names: Sequence[str] | None = None) -> tuple[Pack, ...]:
+    """Load every pack, or an explicit reviewed subset, without partial discovery.
+
+    ``names`` lets release orchestration obtain its candidate list from reviewed
+    configuration while discovery continues to come from entry points.  Names
+    absent from discovery are errors; silently omitting an allowlisted pack
+    would make a missing control look like a clean run.
+    """
+    discovered = available()
+    selected = discovered if names is None else tuple(names)
+    missing = tuple(name for name in selected if name not in discovered)
+    if missing:
+        raise PackError(
+            "configured active pack(s) are not registered: "
+            f"{', '.join(missing)}; available packs: {', '.join(discovered) or 'none'}"
+        )
+    return tuple(load(name) for name in selected)

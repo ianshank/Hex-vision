@@ -30,6 +30,7 @@ prefixes = [
     "coverage",
     "robotics.safety_envelope",
     "contract",
+    "orchestration",
     "decision_log",
     "scanners",
     "specification_validator",
@@ -56,7 +57,7 @@ targets = [
 # local pass stops predicting a CI pass, which is the only reason to run it.
 pre_pr_order = [
   "install", "lint", "types", "cov", "secrets", "specs", "audit", "remotes",
-  "projections", "traceability", "conformance",
+  "projections", "traceability", "conformance", "domain-gates",
 ]
 # Conformance reads the authoritative prerequisite chain from this repository
 # artifact; packs must delegate to it instead of copying the chain themselves.
@@ -71,6 +72,12 @@ fail_closed_on_missing_tool = ["secrets", "audit", "remotes", "cov", "types", "l
 # Gates permitted a loud degraded mode: the absence must be printed on stderr on
 # EVERY run so it cannot become the invisible steady state.
 degrade_loudly = ["specs"]
+
+# Dynamic entry points are not a release allowlist.  Every pack run by
+# `domain-gates` must be named in this frozen, reviewed list; discovered plugins
+# outside it are deliberately ignored rather than inheriting release authority.
+[orchestration]
+active_packs = ["jetson"]
 
 [contract.invariants]
 inv_1 = "Secret scan covers working tree AND history, and fails closed."
