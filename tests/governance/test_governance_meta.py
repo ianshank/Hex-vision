@@ -151,16 +151,21 @@ def test_ci_has_least_privilege_concurrency_and_jetson_conformance() -> None:
     assert "make conformance PACK=jetson" in ci
 
 
-def test_ci_pins_runner_disables_checkout_credentials_and_supplies_scanner_versions() -> None:
-    """PR code never receives persisted checkout credentials or floating gate tools."""
+def test_ci_pins_runner_disables_checkout_credentials_and_uses_scanner_config() -> None:
+    """PR code never receives persisted credentials or scanner identity pins from Make literals."""
     ci = CI.read_text(encoding="utf-8")
     assert "ubuntu-latest" not in ci
     assert ci.count("runs-on: ubuntu-24.04") == len(ci_jobs())
     checkout_count = ci.count("uses: actions/checkout@")
     assert checkout_count == ci.count("persist-credentials: false")
     makefile = MAKEFILE.read_text(encoding="utf-8")
-    assert "override GITLEAKS_VERSION := v8.28.0" in makefile
-    assert "override OSV_VERSION := v2.2.4" in makefile
+    defaults = DEFAULTS.read_text(encoding="utf-8")
+    assert "[scanners.gitleaks]" in defaults
+    assert "[scanners.osv-scanner]" in defaults
+    assert "artifact_sha256" in defaults
+    assert "GITLEAKS_VERSION" not in makefile
+    assert "OSV_VERSION" not in makefile
+    assert "scanner_identity" in makefile
     assert "checksum mismatch; refusing to install" in makefile
     assert "make secrets-install INSTALL_DIR=" in ci
     assert "make audit-install INSTALL_DIR=" in ci
@@ -242,19 +247,35 @@ def test_requirement_markers_cited_by_tests_resolve_when_governance_docs_exist()
 def test_make_secrets_fails_closed_without_gitleaks() -> None:
     """No-gitleaks machine: the secrets target blocks rather than silently skipping."""
     make = shutil.which("make")
+    uv = shutil.which("uv")
     assert make is not None
-    result = run_process([make, "secrets"], cwd=REPO_ROOT, env={"PATH": "/usr/bin:/bin"})
-    assert result.returncode != 0
-    assert "gitleaks not found" in result.stdout
+    assert uv is not None
+    result = run_process(
+        [make, "secrets"],
+        cwd=REPO_ROOT,
+        env={"PATH": "/usr/bin:/bin", "PM": str(Path(uv).resolve())},
+    )
+    assert result.returncode == 2
+    assert "scanner identity BLOCKED: gitleaks version 8.28.0 is not found on PATH" in (
+        result.stdout + result.stderr
+    )
 
 
 def test_make_audit_fails_closed_without_osv_scanner() -> None:
     """No-osv-scanner machine: the audit target blocks rather than silently skipping."""
     make = shutil.which("make")
+    uv = shutil.which("uv")
     assert make is not None
-    result = run_process([make, "audit"], cwd=REPO_ROOT, env={"PATH": "/usr/bin:/bin"})
-    assert result.returncode != 0
-    assert "osv-scanner not found" in result.stdout
+    assert uv is not None
+    result = run_process(
+        [make, "audit"],
+        cwd=REPO_ROOT,
+        env={"PATH": "/usr/bin:/bin", "PM": str(Path(uv).resolve())},
+    )
+    assert result.returncode == 2
+    assert "scanner identity BLOCKED: osv-scanner version 2.2.4 is not found on PATH" in (
+        result.stdout + result.stderr
+    )
 
 
 @pytest.mark.parametrize(
@@ -287,27 +308,35 @@ def test_make_secrets_ignores_untrusted_scanner_overrides_and_blocks_a_planted_s
     assert "leaks found" in output
 
 
-def test_make_secrets_rejects_a_path_shadow_with_the_wrong_version(tmp_path: Path) -> None:
-    """Scanner discovery is insufficient: a same-named binary must prove its pinned version."""
+def test_make_secrets_rejects_a_version_spoofing_path_shadow(tmp_path: Path) -> None:
+    """A fake scanner that reports the configured version still fails on its artifact digest."""
     fake = tmp_path / "gitleaks"
-    fake.write_text("#!/usr/bin/env bash\nprintf '0.0.0\\n'\n", encoding="utf-8")
+    fake.write_text(
+        "#!/usr/bin/env bash\nif [ \"$1\" = version ]; then printf '8.28.0\\n'; fi\n",
+        encoding="utf-8",
+    )
     fake.chmod(0o755)
     result = run_process(
         ["make", "secrets"],
         cwd=REPO_ROOT,
         env={"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
     )
-    assert result.returncode != 0
-    assert "gitleaks identity verification failed: expected version 8.28.0, observed 0.0.0" in (
-        result.stdout + result.stderr
+    assert result.returncode == 2
+    assert (
+        "scanner identity BLOCKED: gitleaks SHA-256 digest mismatch"
+        in result.stdout + result.stderr
     )
 
 
-def test_make_audit_rejects_a_path_shadow_with_the_wrong_version(tmp_path: Path) -> None:
-    """The dependency scanner receives the same pinned-identity protection as gitleaks."""
+def test_make_audit_rejects_a_version_spoofing_path_shadow(tmp_path: Path) -> None:
+    """OSV receives the same artifact-digest protection as the secret scanner."""
     fake = tmp_path / "osv-scanner"
     fake.write_text(
-        "#!/usr/bin/env bash\nprintf 'osv-scanner version: 0.0.0\\n'\n", encoding="utf-8"
+        (
+            "#!/usr/bin/env bash\n"
+            "if [ \"$1\" = --version ]; then printf 'osv-scanner version: 2.2.4\\n'; fi\n"
+        ),
+        encoding="utf-8",
     )
     fake.chmod(0o755)
     result = run_process(
@@ -315,7 +344,14 @@ def test_make_audit_rejects_a_path_shadow_with_the_wrong_version(tmp_path: Path)
         cwd=REPO_ROOT,
         env={"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
     )
-    assert result.returncode != 0
-    assert "osv-scanner identity verification failed: expected version 2.2.4, observed" in (
-        result.stdout + result.stderr
+    assert result.returncode == 2
+    assert (
+        "scanner identity BLOCKED: osv-scanner SHA-256 digest mismatch"
+        in result.stdout + result.stderr
     )
+
+
+def test_make_secrets_passes_with_the_verified_installed_scanner() -> None:
+    """The configured genuine gitleaks artifact remains usable after identity verification."""
+    result = run_process(["make", "secrets"], cwd=REPO_ROOT)
+    assert result.returncode == 0, result.stdout + result.stderr

@@ -25,25 +25,11 @@ ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 # tool version cannot float between local and CI.
 PM ?= uv
 RUN ?= $(PM) run --
-# Security scanners and all of their identity pins are deliberately immune to
-# environment and command-line Make assignments. A caller-controlled executable
-# can acknowledge any scan without reading the repository, which is no scan.
-override GITLEAKS := gitleaks
-override GITLEAKS_VERSION := v8.28.0
-GITLEAKS_RELEASE_VERSION := $(patsubst v%,%,$(GITLEAKS_VERSION))
-override GITLEAKS_LINUX_X64_SHA256 := a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
-override GITLEAKS_LINUX_ARM64_SHA256 := eff65261156100e5d94a6b3dec313d532fddfe19ae1590bf7a2b4f2699128356
-override GITLEAKS_DARWIN_X64_SHA256 := edf5a507008b0d2ef4959575772772770586409c1f6f74dabf19cbe7ec341ced
-override GITLEAKS_DARWIN_ARM64_SHA256 := d942f3ad147250c9edbaab3fed9e482f98d3b59ba10ae97b8d75647e3ade492c
-override OSV := osv-scanner
-override OSV_VERSION := v2.2.4
-OSV_RELEASE_VERSION := $(patsubst v%,%,$(OSV_VERSION))
-override OSV_LINUX_X64_SHA256 := 7702cd1e5d9f5059dd9570f4ad967f27d3c5f5391b371ec937b384c238177f55
-override OSV_LINUX_ARM64_SHA256 := 94d1c520b30a7e28b0189b2a1dd24c7b08f41887186e8ae3f811067ec9ed7043
-override OSV_DARWIN_X64_SHA256 := 589e673d8d6585fecf4384fa4d85cb9fa5aa7f6ff6a8c4e5ef1472e8217d5875
-override OSV_DARWIN_ARM64_SHA256 := bd964925a27037db3a0426ac411a6599cd18781bb2bd72ce02adf4a6a1fe9058
-# INSTALL_DIR and INSTALL_METHOD affect only the explicit installer targets;
-# secrets and audit select only the protected executable names above.
+# Scanner versions and per-platform digests are frozen configuration.  This
+# helper resolves a canonical absolute path and verifies its artifact digest.
+# Make then invokes that exact path immediately after verification.
+override SCANNER_IDENTITY := $(RUN) python -m hexvision.scanner_identity
+# INSTALL_DIR and INSTALL_METHOD affect only the explicit installer targets.
 INSTALL_DIR ?= $(HOME)/.local/bin
 # CI selects `release` because it exports INSTALL_DIR to later steps. Local
 # `auto` preserves the existing Go installer when Go is available.
@@ -103,42 +89,28 @@ types: ## Static types (config in pyproject.toml; strict mode, whole project)
 # `git` scans COMMITTED HISTORY (a secret added and later deleted still lives
 # in the objects).
 secrets: ## Secret scan of working tree AND history. Fails closed if gitleaks is absent.
-	@tool_path="$$(command -v "$(GITLEAKS)" 2>/dev/null)" || { \
-	  echo "gitleaks not found. A security gate that silently skips is worse"; \
-	  echo "than no gate, so this fails closed. Install it with:"; \
-	  echo "    make secrets-install"; \
-	  exit 1; }; \
-	  observed="$$( "$$tool_path" version 2>&1 || true)"; \
-	  test "$$observed" = "$(GITLEAKS_RELEASE_VERSION)" || { \
-	    printf 'gitleaks identity verification failed: expected version %s, observed %s\n' \
-	      "$(GITLEAKS_RELEASE_VERSION)" "$${observed:-<no version output>}"; \
-	    exit 1; }
-	$(GITLEAKS) dir $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
-	$(GITLEAKS) git $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
+	@tool_path="$$( $(SCANNER_IDENTITY) verify gitleaks)"; \
+	  "$$tool_path" dir $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
+	@tool_path="$$( $(SCANNER_IDENTITY) verify gitleaks)"; \
+	  "$$tool_path" git $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
 
 secrets-install: ## Install pinned gitleaks (Go when available, verified release binary otherwise)
-	@if test "$(INSTALL_METHOD)" = "go" || { test "$(INSTALL_METHOD)" = "auto" && command -v go >/dev/null 2>&1; }; then \
+	@eval "$$($(SCANNER_IDENTITY) install-shell gitleaks)"; \
+	if test "$(INSTALL_METHOD)" = "go" || { test "$(INSTALL_METHOD)" = "auto" && command -v go >/dev/null 2>&1; }; then \
 	  command -v go >/dev/null 2>&1 || { echo "go was requested but is not installed" >&2; exit 1; }; \
-	  go install github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION); \
+	  go install "$$go_module@$$version"; \
 	elif test "$(INSTALL_METHOD)" = "auto" || test "$(INSTALL_METHOD)" = "release"; then \
-	  case "$$(uname -s):$$(uname -m)" in \
-	    Linux:x86_64) asset="gitleaks_$(GITLEAKS_RELEASE_VERSION)_linux_x64.tar.gz"; expected="$(GITLEAKS_LINUX_X64_SHA256)" ;; \
-	    Linux:aarch64|Linux:arm64) asset="gitleaks_$(GITLEAKS_RELEASE_VERSION)_linux_arm64.tar.gz"; expected="$(GITLEAKS_LINUX_ARM64_SHA256)" ;; \
-	    Darwin:x86_64) asset="gitleaks_$(GITLEAKS_RELEASE_VERSION)_darwin_x64.tar.gz"; expected="$(GITLEAKS_DARWIN_X64_SHA256)" ;; \
-	    Darwin:arm64) asset="gitleaks_$(GITLEAKS_RELEASE_VERSION)_darwin_arm64.tar.gz"; expected="$(GITLEAKS_DARWIN_ARM64_SHA256)" ;; \
-	    *) echo "unsupported platform for gitleaks release install: $$(uname -s)/$$(uname -m)" >&2; exit 1 ;; \
-	  esac; \
 	  command -v curl >/dev/null 2>&1 || { echo "curl is required to download gitleaks" >&2; exit 1; }; \
 	  workdir="$$(mktemp -d)"; trap 'rm -rf "$$workdir"' EXIT; \
 	  archive="$$workdir/$$asset"; \
-	  curl -fsSL -o "$$archive" "https://github.com/gitleaks/gitleaks/releases/download/$(GITLEAKS_VERSION)/$$asset"; \
+	  curl -fsSL -o "$$archive" "$$download_url"; \
 	  if command -v sha256sum >/dev/null 2>&1; then actual="$$(sha256sum "$$archive" | awk '{print $$1}')"; \
 	  elif command -v shasum >/dev/null 2>&1; then actual="$$(shasum -a 256 "$$archive" | awk '{print $$1}')"; \
 	  else echo "no SHA-256 utility found; refusing to install unverified gitleaks" >&2; exit 1; fi; \
-	  test "$$actual" = "$$expected" || { echo "gitleaks checksum mismatch; refusing to install" >&2; exit 1; }; \
+	  test "$$actual" = "$$release_sha256" || { echo "gitleaks checksum mismatch; refusing to install" >&2; exit 1; }; \
 	  mkdir -p "$(INSTALL_DIR)"; tar -xzf "$$archive" -C "$$workdir"; \
-	  install -m 0755 "$$workdir/gitleaks" "$(INSTALL_DIR)/gitleaks"; \
-	  echo "installed gitleaks $(GITLEAKS_VERSION) to $(INSTALL_DIR)/gitleaks"; \
+	  install -m 0755 "$$workdir/$$archive_member" "$(INSTALL_DIR)/$$executable"; \
+	  echo "installed gitleaks $$version to $(INSTALL_DIR)/$$executable"; \
 	else echo "unknown INSTALL_METHOD=$(INSTALL_METHOD); expected auto, go, or release" >&2; exit 1; fi
 
 specs: ## Strict spec validation (wrapper falls back to structural validator)
@@ -148,45 +120,30 @@ specs: ## Strict spec validation (wrapper falls back to structural validator)
 # advisory must be a named line with an owner, a reason and an expiry, which
 # `pip-audit --ignore-vuln` and `npm audit --audit-level` cannot express.
 audit: ## Dependency vulnerability scan. Ignore ONLY named, documented advisories.
-	@tool_path="$$(command -v "$(OSV)" 2>/dev/null)" || { \
-	  echo "osv-scanner not found. This gate fails closed rather than skip."; \
-	  echo "Install it with:"; \
-	  echo "    make audit-install"; \
-	  exit 1; }; \
-	  observed="$$( "$$tool_path" --version 2>&1 || true)"; \
-	  case "$$observed" in *"osv-scanner version: $(OSV_RELEASE_VERSION)"*) ;; *) \
-	    printf 'osv-scanner identity verification failed: expected version %s, observed %s\n' \
-	      "$(OSV_RELEASE_VERSION)" "$${observed:-<no version output>}"; \
-	    exit 1 ;; esac
 	@test -f $(ROOT)/uv.lock || { \
 	  echo "uv.lock is absent, so there is nothing pinned to audit."; \
 	  echo "This fails closed rather than report a clean scan of nothing."; \
 	  echo "Generate it with:  $(PM) lock"; \
 	  exit 1; }
-	$(OSV) scan --lockfile=$(ROOT)/uv.lock --config=$(ROOT)/osv-scanner.toml
+	@tool_path="$$( $(SCANNER_IDENTITY) verify osv-scanner)"; \
+	  "$$tool_path" scan --lockfile=$(ROOT)/uv.lock --config=$(ROOT)/osv-scanner.toml
 
 audit-install: ## Install pinned osv-scanner (Go when available, verified release binary otherwise)
-	@if test "$(INSTALL_METHOD)" = "go" || { test "$(INSTALL_METHOD)" = "auto" && command -v go >/dev/null 2>&1; }; then \
+	@eval "$$($(SCANNER_IDENTITY) install-shell osv-scanner)"; \
+	if test "$(INSTALL_METHOD)" = "go" || { test "$(INSTALL_METHOD)" = "auto" && command -v go >/dev/null 2>&1; }; then \
 	  command -v go >/dev/null 2>&1 || { echo "go was requested but is not installed" >&2; exit 1; }; \
-	  go install github.com/google/osv-scanner/v2/cmd/osv-scanner@$(OSV_VERSION); \
+	  go install "$$go_module@$$version"; \
 	elif test "$(INSTALL_METHOD)" = "auto" || test "$(INSTALL_METHOD)" = "release"; then \
-	  case "$$(uname -s):$$(uname -m)" in \
-	    Linux:x86_64) asset="osv-scanner_linux_amd64"; expected="$(OSV_LINUX_X64_SHA256)" ;; \
-	    Linux:aarch64|Linux:arm64) asset="osv-scanner_linux_arm64"; expected="$(OSV_LINUX_ARM64_SHA256)" ;; \
-	    Darwin:x86_64) asset="osv-scanner_darwin_amd64"; expected="$(OSV_DARWIN_X64_SHA256)" ;; \
-	    Darwin:arm64) asset="osv-scanner_darwin_arm64"; expected="$(OSV_DARWIN_ARM64_SHA256)" ;; \
-	    *) echo "unsupported platform for osv-scanner release install: $$(uname -s)/$$(uname -m)" >&2; exit 1 ;; \
-	  esac; \
 	  command -v curl >/dev/null 2>&1 || { echo "curl is required to download osv-scanner" >&2; exit 1; }; \
 	  workdir="$$(mktemp -d)"; trap 'rm -rf "$$workdir"' EXIT; \
 	  binary="$$workdir/$$asset"; \
-	  curl -fsSL -o "$$binary" "https://github.com/google/osv-scanner/releases/download/$(OSV_VERSION)/$$asset"; \
+	  curl -fsSL -o "$$binary" "$$download_url"; \
 	  if command -v sha256sum >/dev/null 2>&1; then actual="$$(sha256sum "$$binary" | awk '{print $$1}')"; \
 	  elif command -v shasum >/dev/null 2>&1; then actual="$$(shasum -a 256 "$$binary" | awk '{print $$1}')"; \
 	  else echo "no SHA-256 utility found; refusing to install unverified osv-scanner" >&2; exit 1; fi; \
-	  test "$$actual" = "$$expected" || { echo "osv-scanner checksum mismatch; refusing to install" >&2; exit 1; }; \
-	  mkdir -p "$(INSTALL_DIR)"; install -m 0755 "$$binary" "$(INSTALL_DIR)/osv-scanner"; \
-	  echo "installed osv-scanner $(OSV_VERSION) to $(INSTALL_DIR)/osv-scanner"; \
+	  test "$$actual" = "$$release_sha256" || { echo "osv-scanner checksum mismatch; refusing to install" >&2; exit 1; }; \
+	  mkdir -p "$(INSTALL_DIR)"; install -m 0755 "$$binary" "$(INSTALL_DIR)/$$executable"; \
+	  echo "installed osv-scanner $$version to $(INSTALL_DIR)/$$executable"; \
 	else echo "unknown INSTALL_METHOD=$(INSTALL_METHOD); expected auto, go, or release" >&2; exit 1; fi
 
 # --- governance checks (the CI guard job) --------------------------------

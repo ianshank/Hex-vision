@@ -285,7 +285,7 @@ class ZeroSkipAuditGate(Gate):
                 if (
                     isinstance(node, ast.Call)
                     and isinstance(node.func, ast.Attribute)
-                    and node.func.attr in {"skip", "xfail"}
+                    and node.func.attr in {"skip", "xfail", "importorskip"}
                 ):
                     forbidden = (
                         isinstance(node.func.value, ast.Name) and node.func.value.id == "pytest"
