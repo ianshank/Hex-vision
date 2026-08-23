@@ -88,8 +88,14 @@ def test_evidence_symlink_outside_repository_is_blocked(
     assert not result.measurements
 
 
+# Traceability: R-15 [Unreadable absence ledger]
 def test_hardware_decision_symlink_does_not_authorise_absence(tmp_path: Path) -> None:
-    """A decision log outside the repository cannot turn missing hardware green."""
+    """A decision log outside the repository cannot turn missing hardware green.
+
+    The target ledger would authorise both absences if it were trusted; reaching
+    it through a symlink is an evidence failure, reported as such rather than
+    collapsed into "no decision was recorded".
+    """
     docs = tmp_path / "docs"
     decision_log = docs / "decision-log.md"
     external_symlink(
@@ -97,14 +103,16 @@ def test_hardware_decision_symlink_does_not_authorise_absence(tmp_path: Path) ->
         tmp_path.parent / f"{tmp_path.name}-outside" / "decision-log.md",
     )
     (decision_log.resolve()).write_text(
-        "2026-08-22 | DEC-1 | hil_smoke unavailable | reviewer\n"
-        "2026-08-22 | DEC-2 | sitl_mission unavailable | reviewer\n",
+        "2026-08-22 | DEC-1 | hil_smoke unavailable | reviewer "
+        "| hardware-in-loop:hil_smoke | active | -\n"
+        "2026-08-22 | DEC-2 | sitl_mission unavailable | reviewer "
+        "| hardware-in-loop:sitl_mission | active | -\n",
         encoding="utf-8",
     )
     result = HardwareInLoopGate().check(load_config(root=tmp_path, env={}))
     assert result.status is GateStatus.BLOCKED
-    assert result.measurements["decision_id"] is None
-    assert result.measurements["missing"] == {"hil_smoke": None, "sitl_mission": None}
+    assert result.summary == "hardware absence authority could not be verified"
+    assert "symlink" in result.findings[0].message
 
 
 @pytest.mark.parametrize(
