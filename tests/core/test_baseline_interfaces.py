@@ -42,10 +42,16 @@ def test_json_formatter_and_verdict_logging_use_structured_stderr() -> None:
     assert logged["clause"] == "INV-3"
 
 
-@pytest.mark.parametrize("level, fmt", [("bogus", "text"), ("INFO", "bad")])
-def test_logging_rejects_invalid_configuration(level: str, fmt: str) -> None:
+@pytest.mark.parametrize(
+    ("level", "fmt", "message"),
+    [
+        ("bogus", "text", r"unknown log level 'BOGUS'"),
+        ("INFO", "bad", r"unknown log format 'bad'"),
+    ],
+)
+def test_logging_rejects_invalid_configuration(level: str, fmt: str, message: str) -> None:
     """Invalid logging settings fail loudly instead of hiding diagnostics."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         configure_logging(level=level, fmt=fmt, env={})
 
 
@@ -134,7 +140,7 @@ def _failed_result() -> GateResult:
 
 
 @pytest.mark.parametrize(
-    "outcome, expected",
+    ("outcome", "expected"),
     [
         (GateResult.passed("test-gate", summary="ok"), GateStatus.PASSED),
         (_failed_result(), GateStatus.FAILED),
@@ -170,19 +176,19 @@ def test_run_gates_collects_all_results(make_config, tmp_repo) -> None:  # type:
 
 def test_model_rejections_sorting_and_target_spec_validation() -> None:
     """Result and pack primitives reject fail-open shapes and keep findings deterministic."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"unknown severity 'unknown'"):
         Severity.from_label("unknown")
     blocker = Finding("z", Severity.BLOCKER, "z")
     major = Finding("a", Severity.MAJOR, "a")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"reported PASSED while carrying"):
         GateResult.passed("x", summary="bad", findings=(major,))
     assert [
         finding.id
         for finding in GateResult.failed("x", summary="bad", findings=(major, blocker)).findings
     ] == ["z", "a"]
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"declares an empty command"):
         TargetSpec("x", ())
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"opts out of fail-closed behaviour"):
         TargetSpec("x", ("tool",), fail_closed_on_missing_tool=False)
 
 

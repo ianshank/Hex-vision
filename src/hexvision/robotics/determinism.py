@@ -297,7 +297,7 @@ def _policy(config: Config, clause: str) -> dict[str, Any]:
     return policy
 
 
-def _numeric(value: Any) -> bool:
+def _numeric(value: object) -> bool:
     """Identify numeric metrics without accepting booleans as integer values."""
     return isinstance(value, int | float) and not isinstance(value, bool)
 

@@ -24,7 +24,7 @@ import logging
 import os
 import sys
 from collections.abc import Mapping
-from typing import Any, Final
+from typing import Any, Final, TextIO
 
 __all__ = ["JsonFormatter", "configure_logging", "get_logger", "log_verdict"]
 
@@ -83,7 +83,7 @@ def configure_logging(
     level: str | None = None,
     fmt: str | None = None,
     env: Mapping[str, str] | None = None,
-    stream: Any | None = None,
+    stream: TextIO | None = None,
 ) -> logging.Logger:
     """Configure and return the harness root logger.
 
@@ -170,7 +170,7 @@ def log_verdict(
     passed: bool | None = None,
     status: str | None = None,
     clause: str | None = None,
-    **context: Any,
+    **context: object,
 ) -> None:
     """Emit a gate verdict at a level and label that match its severity.
 

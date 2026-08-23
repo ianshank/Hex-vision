@@ -57,7 +57,7 @@ def test_model_card_required_fields_are_individually_enforced(
 
 
 @pytest.mark.parametrize(
-    "card, finding_id, severity",
+    ("card", "finding_id", "severity"),
     [
         ({"precision": "fp8"}, "PRECISION", Severity.MAJOR),
         ({"target_runtime": "bespoke"}, "RUNTIME", Severity.MAJOR),
@@ -97,19 +97,19 @@ def test_model_card_finds_orphan_card_artifact(passing_repo: Any) -> None:
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("text", "message"),
     [
-        "model_name: detector",
-        "---\nmodel_name: detector",
-        "---\nmodel name: detector\n---",
-        "---\nname: &alias detector\n---",
-        "---\nname: 'unterminated\n---",
-        "---\nname:\n---",
+        ("model_name: detector", r"must begin with a front-matter delimiter"),
+        ("---\nmodel_name: detector", r"front matter has no closing delimiter"),
+        ("---\nmodel name: detector\n---", r"invalid front-matter key 'model name'"),
+        ("---\nname: &alias detector\n---", r"unsupported YAML construct"),
+        ("---\nname: 'unterminated\n---", r"unclosed quoted scalar"),
+        ("---\nname:\n---", r"empty list value for 'name'"),
     ],
 )
-def test_front_matter_rejects_ambiguous_or_malformed_yaml(text: str) -> None:
+def test_front_matter_rejects_ambiguous_or_malformed_yaml(text: str, message: str) -> None:
     """The stdlib parser refuses syntax it cannot interpret exactly."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         parse_front_matter(text)
 
 

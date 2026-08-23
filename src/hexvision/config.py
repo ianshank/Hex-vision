@@ -39,7 +39,7 @@ import tomllib
 from collections.abc import Iterator, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, TypeAlias
 
 from hexvision.errors import ConfigError, FrozenKeyOverrideError, MissingKeyError
 from hexvision.observability import get_logger
@@ -73,6 +73,11 @@ _DEFAULT_ENV_PREFIX: Final = "HEXVISION_"
 #: Without this exclusion, `HEXVISION_LOG_LEVEL` would resolve to a bogus
 #: `log.level` key and pollute `config dump`.
 _ENV_RESERVED_SUFFIXES: Final = frozenset({"LOG_LEVEL", "LOG_FORMAT", "CONFIG"})
+
+# TOML accepts heterogeneous scalar, list, table, and date-like values. The
+# configuration accessors intentionally expose that dynamic boundary; each
+# consuming policy validates its concrete schema before acting on the value.
+ConfigValue: TypeAlias = Any
 
 
 class ConfigLayer:
@@ -160,9 +165,9 @@ def _read_toml(path: Path) -> dict[str, Any]:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
 
 
-def _nested_get(data: Mapping[str, Any], path: Sequence[str]) -> Any | None:
+def _nested_get(data: Mapping[str, ConfigValue], path: Sequence[str]) -> ConfigValue | None:
     """Return a nested value by path segments, or ``None`` if absent."""
-    cursor: Any = data
+    cursor: ConfigValue = data
     for segment in path:
         if not isinstance(cursor, Mapping) or segment not in cursor:
             return None
@@ -216,7 +221,7 @@ def _assert_supported_keys(
             )
 
 
-def _parse_env_value(raw: str) -> Any:
+def _parse_env_value(raw: str) -> ConfigValue:
     """Type an environment string by parsing it as a TOML value.
 
     ``HEXVISION_ROBOTICS__LATENCY__PERCENTILE=95`` must yield the integer ``95``,
@@ -306,7 +311,7 @@ class Config:
             key == prefix or key.startswith(f"{prefix}.") for prefix in self._frozen_prefixes
         )
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: str, default: ConfigValue = None) -> ConfigValue:
         """Return the value at a dotted key, or ``default`` when absent.
 
         Returns a deep copy of tables and lists so a caller cannot mutate shared
@@ -317,7 +322,7 @@ class Config:
             return default
         return copy.deepcopy(value) if isinstance(value, Mapping | list) else value
 
-    def require(self, key: str, *, clause: str | None = None) -> Any:
+    def require(self, key: str, *, clause: str | None = None) -> ConfigValue:
         """Return the value at a dotted key or raise.
 
         Used for every value a gate cannot sensibly default. Guessing a latency

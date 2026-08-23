@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -77,7 +77,7 @@ class _PassingVerifier:
 
 
 @pytest.fixture(autouse=True)
-def _fixture_verifiers():  # type: ignore[no-untyped-def]
+def _fixture_verifiers() -> Generator[None, None, None]:
     """Replace installed probes for declaration-focused tests without bypassing lie detection."""
 
     clear_registered()
@@ -116,7 +116,7 @@ class _Conforming(Pack):
             specs["specs"] = TargetSpec("specs", ("specs",), False, rationale="exception")
         return specs
 
-    def domain_gates(self, config):  # type: ignore[no-untyped-def]
+    def domain_gates(self, config) -> tuple[Gate, ...]:  # type: ignore[no-untyped-def]
         del config
         if self.defect == "gates-error":
             raise ValueError("cannot load gates")
@@ -208,7 +208,7 @@ def test_conformance_rejects_the_reviewers_no_op_lie_pack(make_config, tmp_repo)
     class LiePack(_Conforming):
         """Recreate the peer-review pack whose target commands all reported success."""
 
-        def targets(self, config):  # type: ignore[no-untyped-def]
+        def targets(self, config) -> dict[str, TargetSpec]:  # type: ignore[no-untyped-def]
             names = config.require("contract.targets")
             specs = {name: TargetSpec(name, ("true",)) for name in names}
             specs["pre-pr"] = TargetSpec("pre-pr", ("make", "pre-pr"))

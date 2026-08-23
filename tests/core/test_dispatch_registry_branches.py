@@ -16,7 +16,7 @@ from hexvision.packs import registry
 
 
 @pytest.mark.parametrize(
-    "args, attribute",
+    ("args", "attribute"),
     [
         (SimpleNamespace(command="remotes"), "check_remotes"),
         (SimpleNamespace(command="traceability"), "check_traceability"),

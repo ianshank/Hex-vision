@@ -482,7 +482,9 @@ def _validity_findings(
     return findings
 
 
-def _is_widened(current: Any, baseline: Any, direction: Any, failsafe_strength: Any) -> bool:
+def _is_widened(
+    current: object, baseline: object, direction: object, failsafe_strength: object
+) -> bool:
     """Compare a single bound using its configured permissive direction.
 
     Altitude, speed, tilt and geofence are wider when larger; RTL battery is
@@ -502,7 +504,7 @@ def _is_widened(current: Any, baseline: Any, direction: Any, failsafe_strength: 
     return False
 
 
-def _decision_exists(config: Config, policy: Mapping[str, Any], decision_id: Any) -> bool:
+def _decision_exists(config: Config, policy: Mapping[str, Any], decision_id: object) -> bool:
     """Confirm that a mission's ID is valid and occurs in a real configured log record."""
     if not isinstance(decision_id, str) or not re.fullmatch(
         str(policy["decision_id_pattern"]), decision_id
@@ -515,7 +517,7 @@ def _decision_exists(config: Config, policy: Mapping[str, Any], decision_id: Any
         return False
 
 
-def _numeric(value: Any) -> TypeGuard[int | float]:
+def _numeric(value: object) -> TypeGuard[int | float]:
     """Recognise numeric TOML values without allowing booleans as safety values."""
     return isinstance(value, int | float) and not isinstance(value, bool)
 

@@ -11,7 +11,7 @@ import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Final
+from typing import Final
 
 from hexvision.config import Config, load_config
 from hexvision.conformance import check_pack
@@ -97,7 +97,7 @@ def _render_result(result: GateResult, as_json: bool) -> None:
         print(f"{finding.severity.label} {finding.id}{location}: {finding.message}")
 
 
-def _data_result(name: str, data: Any) -> GateResult:
+def _data_result(name: str, data: object) -> GateResult:
     """Wrap non-gate CLI output in the normal result shape for uniform exit behavior."""
     return GateResult.passed(name, summary=f"{name} completed", measurements={"data": data})
 
