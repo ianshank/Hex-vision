@@ -1,30 +1,26 @@
 # Requirement Traceability — Hex-vision
 
-**Source of truth:** `openspec/changes/add-robotics-governance-harness/specs/*.md` (R-1 through R-18), read at source for this matrix. `planning/roadmap_data.py` contains the same identifier set and milestone mapping.
+**Source of truth:** `openspec/changes/add-robotics-governance-harness/specs/*.md`. The traceability gate derives the authoritative R-1 through R-18 set from those specification deltas; this matrix is a checked projection.
 
-**Maintenance:** update whenever a task mapping changes; scheduled updates are tasks 0.5, 1.3, 2.3, 3.3, 4.3, and 5.3.
-
-**Enforcement:** `hexvision.traceability` runs in the CI guard path. It expects columns `requirement id`, `statement`, `status`, `test node id`, `inherits-from`, `decision ref`, and `notes`; it rejects duplicate/missing rows and validates Green test-node collection. Status enum: `Green | Amber | Red | Inherited | Waived`.
-
-All implementation and test references below are planned or in flight unless a cited baseline module is explicitly named. No row is Green because no collecting test node was verified in this worktree.
+**Evidence rule:** a released requirement is Green only with a cited pytest node that is collected by `pytest --collect-only`, plus an explicit `Traceability:` marker in executable test source. Placeholder evidence is rejected. The gate records a per-requirement collection verdict in its measurements.
 
 | requirement id | statement | status | test node id | inherits-from | decision ref | notes |
 |---|---|---|---|---|---|---|
-| R-1 | Layered configuration retains provenance and fails closed on malformed layers. | Amber | (in flight: `tests/core/test_config.py`) | (none) | DEC-004 | Baseline `src/hexvision/config.py` exists; CORE test verification is in flight. |
-| R-2 | Frozen operational controls reject environment and CLI overrides. | Amber | (in flight: `tests/core/test_config.py`) | (none) | DEC-004 | Baseline frozen-key mechanism exists; no Green claim without collection. |
-| R-3 | One shared normalizer handles supported remote URL spellings. | Red | (in flight: `tests/core/test_remotes.py`) | (none) | DEC-004 | CORE owns `src/hexvision/remotes.py`; implementation is in flight. |
-| R-4 | Remote authorization blocks empty, invalid, unreadable, or unallowlisted destinations. | Red | (in flight: `tests/core/test_remotes.py`) | (none) | DEC-004 | CORE implementation is in flight. |
-| R-5 | Traceability rows are complete, unique, and linted against configured semantics. | Red | (in flight: `tests/core/test_traceability.py`) | (none) | DEC-004 | CORE traceability linter is in flight. |
-| R-6 | Green traceability evidence must cite a collecting pytest node. | Red | (in flight: `tests/core/test_traceability.py`) | (none) | DEC-004 | No Green row is claimed until collection is verified. |
-| R-7 | Roadmap and backlog are deterministic generated projections with drift checks. | Amber | (in flight: `tests/core/test_projections.py`) | (none) | RB-001 | Planning source exists; renderer is in flight and output needs regeneration. |
-| R-8 | Packs conform to every Gate Harness Contract v1.1 clause. | Red | (in flight: `tests/core/test_conformance.py`) | (none) | DEC-004 | CORE conformance implementation is in flight. |
-| R-9 | Skipped and xfailed tests fail unless validly authorized. | Red | (in flight: `tests/core/test_contract.py`) | (none) | DEC-004 | CORE conftest and zero-skip audit are in flight. |
-| R-10 | Model provenance and model-card/artifact pairing are enforced. | Red | (in flight: `tests/robotics/test_model_card.py`) | (none) | DEC-002 | JETSON implementation is in flight. |
-| R-11 | Runtime-specific latency evidence includes configured percentile, budget, headroom, and device. | Red | (in flight: `tests/robotics/test_latency.py`) | (none) | DEC-002 | JETSON implementation is in flight. |
-| R-12 | Evaluation evidence proves repeatable seeds and metric tolerance. | Red | (in flight: `tests/robotics/test_determinism.py`) | (none) | DEC-002 | JETSON implementation is in flight. |
-| R-13 | Mission safety bounds are declared and internally consistent without vehicle command. | Red | (in flight: `tests/robotics/test_safety_envelope.py`) | (none) | DEC-004 | JETSON implementation is in flight; non-commanding boundary is specified. |
-| R-14 | Permissive safety-bound widening requires decision-log authority. | Red | (in flight: `tests/robotics/test_safety_envelope.py`) | (none) | OPEN DEC-005/DEC-008 | Owner decision boundaries remain open; implementation must not assume authorization. |
-| R-15 | Hardware-in-the-loop runner absence is declared and authorized or blocks. | Red | (in flight: `tests/robotics/test_hardware_in_loop.py`) | (none) | OPEN DEC-006 | JETSON implementation is in flight; no absence authorization is logged. |
-| R-16 | Robotics governance remains non-commanding. | Red | (in flight: `tests/governance/test_governance_meta.py`) | (none) | DEC-004 | AGENTS enforcement and review instructions are in flight. |
-| R-17 | Public publication requires both destination allowlisting and G-PUB authority. | Red | (in flight: `tests/governance/test_hooks.py`) | (none) | OPEN DEC-007 | G-PUB is intentionally absent; public publication is blocked. |
-| R-18 | Per-file coverage includes untested files and enforces configured floors. | Red | (in flight: `tests/core/test_contract.py`) | (none) | DEC-004 | CORE coverage gate is in flight. |
+| R-1 | Layered configuration retains provenance and fails closed on malformed layers. | Green | tests/core/test_baseline_interfaces.py::test_config_frozen_refusal_provenance_and_accessors | (none) | DEC-004 | Verifies layered provenance and malformed-layer failure. |
+| R-2 | Frozen operational controls reject environment and CLI overrides. | Green | tests/core/test_baseline_interfaces.py::test_config_frozen_refusal_provenance_and_accessors | (none) | DEC-004 | Verifies frozen environment and explicit override refusal. |
+| R-3 | One shared normalizer handles supported remote URL spellings. | Green | tests/core/test_remotes_registry.py::test_remote_spellings_normalize | (none) | DEC-004 | Parametrized supported spelling coverage uses the shared normalizer. |
+| R-4 | Remote authorization blocks empty, invalid, unreadable, or unallowlisted destinations. | Green | tests/core/test_remotes_registry.py::test_remote_policy_empty_allowlist_blocks | (none) | DEC-004 | Verifies fail-closed empty-allowlist handling. |
+| R-5 | Traceability rows are complete, unique, and linted against configured semantics. | Green | tests/core/test_traceability_cli.py::test_traceability_requires_exact_source_requirement_set | (none) | DEC-004 | Verifies missing and extra source-derived ids are findings. |
+| R-6 | Green traceability evidence must cite a collecting pytest node. | Green | tests/core/test_traceability_cli.py::test_traceability_requires_collecting_node_and_test_marker | (none) | DEC-004 | Verifies noncollecting node and absent source marker both fail. |
+| R-7 | Roadmap and backlog are deterministic generated projections with drift checks. | Green | tests/core/test_projections_contract.py::test_projection_write_check_and_drift | (none) | RB-001 | Verifies deterministic projection output and drift detection. |
+| R-8 | Packs conform to every Gate Harness Contract v1.1 clause. | Green | tests/core/test_conformance.py::test_conformance_clean | (none) | DEC-004 | Verifies the configured Jetson pack passes contract conformance. |
+| R-9 | Skipped and xfailed tests fail unless validly authorized. | Green | tests/core/test_projections_contract.py::test_zero_skip_and_makefile_authority | (none) | DEC-004 | Verifies the zero-skip audit and Makefile authority control. |
+| R-10 | Model provenance and model-card/artifact pairing are enforced. | Green | tests/robotics/test_model_card.py::test_model_card_passes_for_complete_card | (none) | DEC-002 | Verifies complete provenance and artifact pairing. |
+| R-11 | Runtime-specific latency evidence includes configured percentile, budget, headroom, and device. | Green | tests/robotics/test_latency.py::test_latency_pass_and_headroom | (none) | DEC-002 | Verifies runtime budget comparison and recorded headroom. |
+| R-12 | Evaluation evidence proves repeatable seeds and metric tolerance. | Green | tests/robotics/test_determinism.py::test_determinism_passes_with_identical_seeds | (none) | DEC-002 | Verifies identical seed evidence and measured spread. |
+| R-13 | Mission safety bounds are declared and internally consistent without vehicle command. | Green | tests/robotics/test_safety_envelope.py::test_safety_passes_valid_new_mission | (none) | DEC-004 | Verifies mission evidence evaluation without vehicle operation. |
+| R-14 | Permissive safety-bound widening requires decision-log authority. | Green | tests/robotics/test_safety_envelope.py::test_safety_widening_with_valid_decision_passes | (none) | DEC-004 | Verifies a resolving decision is required for widening evidence. |
+| R-15 | Hardware-in-the-loop runner absence is declared and authorized or blocks. | Green | tests/robotics/test_hardware_and_pack.py::test_hardware_missing_without_decision_is_visible_blocker | (none) | DEC-004 | Verifies an undeclared runner absence carries a Blocker. |
+| R-16 | Robotics governance remains non-commanding. | Green | tests/robotics/test_safety_envelope.py::test_safety_passes_valid_new_mission | (none) | DEC-004 | Verifies repository-only mission review returns a gate result. |
+| R-17 | Public publication requires both destination allowlisting and G-PUB authority. | Red |  | (none) | (none) | No publication control or executable test currently verifies combined allowlist and G-PUB authorization. |
+| R-18 | Per-file coverage includes untested files and enforces configured floors. | Green | tests/core/test_projections_contract.py::test_coverage_gate_reports_each_floor | (none) | DEC-004 | Verifies per-file floor findings report measured values. |

@@ -35,6 +35,7 @@ def _module(root) -> None:  # type: ignore[no-untyped-def]
     )
 
 
+# Traceability: R-7
 def test_projection_write_check_and_drift(make_config, tmp_repo, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """Generated files round-trip and an edit is detected byte-for-byte."""
     root = tmp_repo(
@@ -75,6 +76,7 @@ def test_projection_loads_repo_data_module_without_pythonpath(make_config, tmp_r
     assert check_projections(make_config(root), write=True).status.value == "passed"
 
 
+# Traceability: R-18
 def test_coverage_gate_reports_each_floor(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """Line and branch deficits are both reported rather than stopping at one file."""
     root = tmp_repo()
@@ -108,6 +110,7 @@ def test_coverage_gate_blocks_missing_report(make_config, tmp_repo) -> None:  # 
     assert CoverageFloorGate().check(make_config(tmp_repo(), None)).status.value == "blocked"
 
 
+# Traceability: R-9
 def test_zero_skip_and_makefile_authority(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """AST skip audit and workflow authority both reject explicit bypasses."""
     root = tmp_repo()

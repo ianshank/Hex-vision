@@ -11,6 +11,7 @@ from hexvision.gates.model import GateStatus, Severity
 from hexvision.robotics.model_card import ModelCardGate, parse_front_matter
 
 
+# Traceability: R-10
 def test_model_card_passes_for_complete_card(passing_repo: Any) -> None:
     """A complete card and its artifact produce a green provenance record."""
     root = passing_repo()
@@ -130,3 +131,17 @@ def test_model_card_checks_each_configured_artifact_root(passing_repo: Any) -> N
     (calibration / "review-required.engine").write_bytes(b"engine")
     result = ModelCardGate().check(load_config(root=root, env={}))
     assert any("calibration/review-required.engine" in item.message for item in result.findings)
+
+
+@pytest.mark.parametrize(
+    "overlay",
+    [
+        "[robotics.model_card]\nrequired_fields = []\n",
+        "[robotics.model_card]\nruntime_field = ''\n",
+    ],
+)
+def test_model_card_blocks_malformed_retargeting_policy(passing_repo: Any, overlay: str) -> None:
+    """An external field mapping must be complete before card evidence is assessed."""
+    root = passing_repo()
+    (root / "hex-vision.toml").write_text(overlay, encoding="utf-8")
+    assert ModelCardGate().check(load_config(root=root, env={})).status is GateStatus.BLOCKED

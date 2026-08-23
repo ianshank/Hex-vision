@@ -54,6 +54,10 @@ class LatencyBudgetGate(Gate):
             expected_percentile = config.require("robotics.latency.percentile", clause=self.clause)
             budgets = config.section("robotics.latency.budgets")
             unit = str(config.require("robotics.latency.unit", clause=self.clause))
+            runtime_field = str(
+                config.require("robotics.latency.runtime_field", clause=self.clause)
+            )
+            device_field = str(config.require("robotics.latency.device_field", clause=self.clause))
         except (TypeError, ValueError) as exc:
             return GateResult.blocked(
                 self.name,
@@ -80,6 +84,8 @@ class LatencyBudgetGate(Gate):
                 float(expected_percentile),
                 budgets,
                 unit,
+                runtime_field,
+                device_field,
                 config.root,
             )
             findings.extend(card_findings)
@@ -113,12 +119,14 @@ class LatencyBudgetGate(Gate):
         expected_percentile: float,
         budgets: dict[str, Any],
         unit: str,
+        runtime_field: str,
+        device_field: str,
         root: Any,
     ) -> tuple[list[Finding], float | None]:
         """Validate one card while preserving headroom even for an over-budget result."""
         location = str(card.path.relative_to(root))
-        runtime = card.fields.get("target_runtime")
-        device = card.fields.get("target_device")
+        runtime = card.fields.get(runtime_field)
+        device = card.fields.get(device_field)
         measured = card.fields.get(measurement_field)
         recorded_percentile = card.fields.get(percentile_field)
         label = f"{runtime or 'unknown runtime'} on {device or 'unknown device'}"

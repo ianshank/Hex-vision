@@ -25,6 +25,8 @@ def _baseline_run(text: str) -> Any:
     return subprocess.CompletedProcess(["git"], 0, stdout=text, stderr="")
 
 
+# Traceability: R-13
+# Traceability: R-16
 def test_safety_passes_valid_new_mission(passing_repo: Any) -> None:
     """A complete internally consistent new mission is measurable and passes."""
     root = passing_repo()
@@ -119,6 +121,7 @@ def test_safety_widening_direction_is_per_bound(  # noqa: PLR0913 - direction ca
     assert not any("WIDENING" in item.id for item in result.findings)
 
 
+# Traceability: R-14
 def test_safety_widening_with_valid_decision_passes(
     monkeypatch: pytest.MonkeyPatch, passing_repo: Any
 ) -> None:

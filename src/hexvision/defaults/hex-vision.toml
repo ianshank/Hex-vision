@@ -102,6 +102,13 @@ git_executable = "git"
 # --------------------------------------------------------------------------
 [traceability]
 matrix_path = "traceability/REQUIREMENT-TRACEABILITY.md"
+# Specification deltas, rather than planning projections or the matrix itself,
+# define the released requirement set.  A changed source location remains a
+# policy change instead of an unreviewed parser edit.
+authoritative_spec_globs = ["openspec/changes/*/specs/*.md"]
+# Requirement headings are source-authoritative declarations.  The named group
+# lets the checker reject a malformed source requirement rather than guessing.
+requirement_heading_pattern = "^### Requirement: (?P<id>R-\\d+)\\s+—"
 # These labels are configured instead of baked into the parser so a repository
 # can retain an established matrix vocabulary while still getting the same lint.
 columns = ["requirement id", "statement", "status", "test node id", "inherits-from", "decision ref", "notes"]
@@ -112,6 +119,13 @@ statuses = ["Green", "Amber", "Red", "Inherited", "Waived"]
 # A Green row must cite a test node id that actually collects; an uncollectable
 # node id is the most common way a matrix drifts into fiction.
 require_test_node_for = ["Green"]
+# Release evidence is complete only when every source requirement has the
+# configured evidence status and at least one collecting test node.
+release_status = "Green"
+test_node_separator = ";"
+# Placeholder evidence must fail as evidence, rather than looking like a test
+# node until a later review notices it never existed.
+placeholder_evidence_patterns = ["in flight", "planned", "todo", "tbd"]
 # An Inherited row must state what it inherits and from which requirement.
 require_inherits_from_for = ["Inherited"]
 # A Waived row must cite a decision-log entry that authorises the waiver.
@@ -121,6 +135,10 @@ decision_id_patterns = ["DEC-\\d+", "RB-\\d+[a-z]?", "G-[A-Z]+", "S\\d+\\.\\d+"]
 # Requirement references in executable tests use their own configured grammar;
 # decision identifiers cannot safely double as requirement identifiers.
 requirement_id_patterns = ["R-\\d+"]
+# Test source cites its requirement with this marker, while the matrix cites the
+# collecting node.  Requiring both directions prevents either projection from
+# drifting into an unreviewed assertion.
+test_citation_pattern = "Traceability:\\s*(R-\\d+)"
 # The validator test necessarily embeds synthetic requirement-shaped identifiers;
 # keep this narrow exclusion auditable while citations elsewhere remain enforced.
 ignored_test_path_globs = ["tests/governance/test_validate_specs.py"]
@@ -177,6 +195,16 @@ card_glob = "models/**/model-card.md"
 # Artifact pairing is explicit so this gate never guesses model formats.
 artifact_field = "artifact_path"
 artifact_globs = ["**/*.engine", "**/*.onnx", "**/*.plan", "**/*.tflite"]
+# Field identities are policy because a third-party pack can retain this
+# provenance semantics while using a different model-card schema.
+model_name_field = "model_name"
+precision_field = "precision"
+runtime_field = "target_runtime"
+device_field = "target_device"
+provenance_license_field = "dataset_license"
+provenance_commit_field = "trained_commit"
+eval_value_field = "eval_value"
+failure_modes_field = "known_failure_modes"
 
 [robotics.latency]
 # Per-runtime inference latency budgets in milliseconds, measured at the
@@ -185,6 +213,10 @@ percentile = 95
 unit = "ms"
 measurement_field = "latency_p95_ms"
 percentile_field = "latency_percentile"
+# These card-schema identities are independently configurable so a pack can
+# retarget latency evidence without inheriting Jetson spellings.
+runtime_field = "target_runtime"
+device_field = "target_device"
 [robotics.latency.budgets]
 tensorrt = 33.0
 onnxruntime = 66.0

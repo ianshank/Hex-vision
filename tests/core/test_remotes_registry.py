@@ -28,6 +28,7 @@ from tests.support.process import coverage_controls_sanitized, run_process
         "git@github.com:org/repo\r",
     ],
 )
+# Traceability: R-3
 def test_remote_spellings_normalize(raw: str) -> None:
     """All Git spellings compare as one policy destination."""
     result = normalize_remote_url(raw)
@@ -83,6 +84,7 @@ def test_more_invalid_remote_forms_block(raw: str) -> None:
     assert normalize_remote_url(raw).is_blocked
 
 
+# Traceability: R-4
 def test_remote_policy_empty_allowlist_blocks(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """A missing destination policy must not become an allow-all rule."""
     config = make_config(tmp_repo("[remotes]\nallowlist=[]\n"))

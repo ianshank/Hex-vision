@@ -101,6 +101,7 @@ def test_makefile_prerequisites_preserves_continuation_order(tmp_path: Path) -> 
     assert _makefile_prerequisites(makefile, "missing") is None
 
 
+# Traceability: R-8
 def test_conformance_clean(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """Domain gates need not fake claims for invariants enforced by core controls."""
     root = tmp_repo()

@@ -57,6 +57,8 @@ def test_logging_defaults_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
     assert captured.out == ""
 
 
+# Traceability: R-1
+# Traceability: R-2
 def test_config_frozen_refusal_provenance_and_accessors(tmp_path: Path) -> None:
     """Frozen policy cannot be weakened while ordinary values retain full provenance."""
     (tmp_path / "hex-vision.toml").write_text(
@@ -81,6 +83,10 @@ def test_config_frozen_refusal_provenance_and_accessors(tmp_path: Path) -> None:
         load_config(root=tmp_path, env={"HEXVISION_COVERAGE__PER_FILE_LINES": "1"})
     with pytest.raises(FrozenKeyOverrideError):
         load_config(root=tmp_path, overrides={"coverage": {"per_file_lines": 1}})
+    malformed = tmp_path / "malformed.toml"
+    malformed.write_text("[broken", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_config(root=tmp_path, config_path=malformed)
 
 
 def test_config_environment_types_and_section_validation(tmp_path: Path) -> None:

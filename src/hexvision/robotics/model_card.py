@@ -178,6 +178,18 @@ class ModelCardGate(Gate):
         try:
             cards = load_model_cards(config)
             artifact_paths = self._artifact_paths(config)
+            required_fields = _strings(
+                config.require("robotics.model_card.required_fields", clause=self.clause)
+            )
+            allowed_precisions = set(
+                _strings(
+                    config.require("robotics.model_card.allowed_precisions", clause=self.clause)
+                )
+            )
+            allowed_runtimes = set(
+                _strings(config.require("robotics.model_card.allowed_runtimes", clause=self.clause))
+            )
+            policy = _field_policy(config, self.clause)
         except (OSError, ValueError) as exc:
             return GateResult.blocked(
                 self.name,
@@ -187,18 +199,7 @@ class ModelCardGate(Gate):
             )
 
         findings: list[Finding] = []
-        required_fields = _strings(
-            config.require("robotics.model_card.required_fields", clause=self.clause)
-        )
-        allowed_precisions = set(
-            _strings(config.require("robotics.model_card.allowed_precisions", clause=self.clause))
-        )
-        allowed_runtimes = set(
-            _strings(config.require("robotics.model_card.allowed_runtimes", clause=self.clause))
-        )
-        artifact_field = str(
-            config.require("robotics.model_card.artifact_field", clause=self.clause)
-        )
+        artifact_field = policy["artifact_field"]
         for index, card in enumerate(cards, 1):
             findings.extend(
                 self._card_findings(
@@ -207,7 +208,7 @@ class ModelCardGate(Gate):
                     required_fields,
                     allowed_precisions,
                     allowed_runtimes,
-                    artifact_field,
+                    policy,
                 )
             )
 
@@ -281,14 +282,18 @@ class ModelCardGate(Gate):
         required_fields: Sequence[str],
         allowed_precisions: set[str],
         allowed_runtimes: set[str],
-        artifact_field: str,
+        policy: Mapping[str, str],
     ) -> list[Finding]:
         """Produce all field findings for one card so a reviewer fixes it in one cycle."""
         location = str(card.path)
         findings: list[Finding] = []
         for field in required_fields:
             if not _nonempty(card.fields.get(field)):
-                severity = Severity.BLOCKER if field == "dataset_license" else Severity.MAJOR
+                severity = (
+                    Severity.BLOCKER
+                    if field == policy["provenance_license_field"]
+                    else Severity.MAJOR
+                )
                 findings.append(
                     _finding(
                         f"MC-{index}-{field.upper()}",
@@ -299,7 +304,7 @@ class ModelCardGate(Gate):
                         "Record the reviewed provenance value in the model card.",
                     )
                 )
-        precision = card.fields.get("precision")
+        precision = card.fields.get(policy["precision_field"])
         if _nonempty(precision) and str(precision) not in allowed_precisions:
             findings.append(
                 _finding(
@@ -311,7 +316,7 @@ class ModelCardGate(Gate):
                     "Use a configured precision or update the reviewed allowlist.",
                 )
             )
-        runtime = card.fields.get("target_runtime")
+        runtime = card.fields.get(policy["runtime_field"])
         if _nonempty(runtime) and str(runtime) not in allowed_runtimes:
             findings.append(
                 _finding(
@@ -323,43 +328,47 @@ class ModelCardGate(Gate):
                     "Use a configured runtime or add its reviewed budget.",
                 )
             )
-        commit = card.fields.get("trained_commit")
+        commit = card.fields.get(policy["provenance_commit_field"])
         if _nonempty(commit) and not _FULL_SHA.fullmatch(str(commit)):
             severity = Severity.MINOR if _ABBREVIATED_SHA.fullmatch(str(commit)) else Severity.MAJOR
             findings.append(
                 _finding(
                     f"MC-{index}-COMMIT",
                     severity,
-                    "trained_commit is not a full 40-hex commit SHA",
+                    f"{policy['provenance_commit_field']} is not a full 40-hex commit SHA",
                     location,
                     self.clause,
                     "Record the immutable full training commit SHA.",
                 )
             )
-        if _nonempty(card.fields.get("eval_value")) and not _number(card.fields["eval_value"]):
+        eval_value_field = policy["eval_value_field"]
+        if _nonempty(card.fields.get(eval_value_field)) and not _number(
+            card.fields[eval_value_field]
+        ):
             findings.append(
                 _finding(
                     f"MC-{index}-EVAL-VALUE",
                     Severity.MAJOR,
-                    "eval_value is not numeric",
+                    f"{eval_value_field} is not numeric",
                     location,
                     self.clause,
                     "Record a numeric evaluation result.",
                 )
             )
-        if not _nonempty(card.fields.get("known_failure_modes")):
+        failure_modes_field = policy["failure_modes_field"]
+        if not _nonempty(card.fields.get(failure_modes_field)):
             findings.append(
                 _finding(
                     f"MC-{index}-FAILURE-MODES",
                     Severity.MAJOR,
-                    "known_failure_modes must state what was assessed, including "
+                    f"{failure_modes_field} must state what was assessed, including "
                     "'None known' when appropriate",
                     location,
                     self.clause,
                     "Record known failure modes or explicitly state None known.",
                 )
             )
-        artifact = card.fields.get(artifact_field)
+        artifact = card.fields.get(policy["artifact_field"])
         if _nonempty(artifact) and not isinstance(artifact, str):
             findings.append(
                 _finding(
@@ -376,9 +385,32 @@ class ModelCardGate(Gate):
 
 def _strings(value: Any) -> tuple[str, ...]:
     """Convert a configured list to strings while making malformed policy visible."""
-    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(item, str) and item for item in value)
+    ):
         raise ValueError("configured policy list must contain non-empty strings")
     return tuple(value)
+
+
+def _field_policy(config: Config, clause: str) -> dict[str, str]:
+    """Read retargetable card schema identities from reviewed configuration."""
+    keys = {
+        "artifact_field": "robotics.model_card.artifact_field",
+        "model_name_field": "robotics.model_card.model_name_field",
+        "precision_field": "robotics.model_card.precision_field",
+        "runtime_field": "robotics.model_card.runtime_field",
+        "device_field": "robotics.model_card.device_field",
+        "provenance_license_field": "robotics.model_card.provenance_license_field",
+        "provenance_commit_field": "robotics.model_card.provenance_commit_field",
+        "eval_value_field": "robotics.model_card.eval_value_field",
+        "failure_modes_field": "robotics.model_card.failure_modes_field",
+    }
+    policy = {name: config.require(key, clause=clause) for name, key in keys.items()}
+    if not all(isinstance(value, str) and value for value in policy.values()):
+        raise ValueError("model-card field identities must be non-empty strings")
+    return {name: str(value) for name, value in policy.items()}
 
 
 def _number(value: Any) -> bool:

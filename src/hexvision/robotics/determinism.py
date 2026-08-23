@@ -88,7 +88,7 @@ class DeterminismGate(Gate):
         findings: list[Finding] = []
         spreads: dict[str, float] = {}
         for index, card in enumerate(cards, 1):
-            model_name = card.fields.get("model_name")
+            model_name = card.fields.get(policy["card_model_name_field"])
             if not isinstance(model_name, str) or model_name not in record_by_model:
                 return GateResult.blocked(
                     self.name,
@@ -263,6 +263,7 @@ def _policy(config: Config, clause: str) -> dict[str, Any]:
         "schema_version_field": "robotics.determinism.schema_version_field",
         "schema_version": "robotics.determinism.schema_version",
         "model_name_field": "robotics.determinism.model_name_field",
+        "card_model_name_field": "robotics.model_card.model_name_field",
         "runs_field": "robotics.determinism.runs_field",
         "metric_field": "robotics.determinism.metric_field",
         "required_runs": "robotics.determinism.required_runs",

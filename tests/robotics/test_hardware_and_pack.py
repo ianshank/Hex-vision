@@ -14,6 +14,7 @@ from hexvision.packs.jetson import JetsonPack, _strings, pack
 from hexvision.robotics.hardware_in_loop import HardwareInLoopGate
 
 
+# Traceability: R-15
 def test_hardware_missing_without_decision_is_visible_blocker(tmp_path: Path) -> None:
     """A missing runner yields the declared-skip status with its unauthorised blocker."""
     config = load_config(root=tmp_path, env={})
