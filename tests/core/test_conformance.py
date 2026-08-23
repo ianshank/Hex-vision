@@ -13,7 +13,7 @@ from hexvision import invariant_verifiers
 from hexvision.config import Config, load_config
 from hexvision.conformance import _makefile_prerequisites, check_pack
 from hexvision.gates.base import Gate
-from hexvision.gates.model import GateResult
+from hexvision.gates.model import GateResult, Severity
 from hexvision.invariant_verifiers import (
     InvariantVerifier,
     ProbeEvidence,
@@ -130,6 +130,12 @@ def _prepare_contract_evidence(root, config, *, reordered: bool = False) -> None
     (root / "src").mkdir()
     (root / "src" / "remote.py").write_text(
         "def normalize_remote_url(raw):\n    return raw\n", encoding="utf-8"
+    )
+    # The authority contract mirrors the normalizer contract: exactly one
+    # declaration, constructed nowhere else. Synthetic trees carry this stub so
+    # conformance evidence stays hermetic rather than leaning on the real repo.
+    (root / "src" / "authority.py").write_text(
+        "class VerifiedAuthority:\n    pass\n", encoding="utf-8"
     )
     order = list(config.require("contract.pre_pr_order"))
     if reordered:
@@ -367,6 +373,74 @@ def test_conformance_reports_unmapped_and_missing_invariant_mechanisms(
     assert any(
         "INV-6" in message and "no invariant_enforcement entry" in message for message in messages
     )
+
+
+# Traceability: R-20 [Single construction authority]
+def test_second_authority_declaration_is_a_blocker(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """A parallel VerifiedAuthority class is rejected before it can mint authority."""
+    root = tmp_repo()
+    config = make_config(root)
+    _prepare_contract_evidence(root, config)
+    (root / "src" / "shadow.py").write_text(
+        "class VerifiedAuthority:\n    pass\n", encoding="utf-8"
+    )
+    result = check_pack(config, _Conforming())
+    assert result.status.value == "failed"
+    assert any(
+        "exactly one VerifiedAuthority declaration" in finding.message
+        and finding.severity is Severity.BLOCKER
+        for finding in result.findings
+    )
+
+
+@pytest.mark.parametrize(
+    "construction",
+    [
+        "from authority import VerifiedAuthority as VA\nvalue = VA('DEC-1', 's', None)\n",
+        "import authority\nvalue = authority.VerifiedAuthority('DEC-1', 's', None)\n",
+        "from authority import VerifiedAuthority\nvalue = VerifiedAuthority('DEC-1', 's', None)\n",
+        ("from authority import VerifiedAuthority\nvalue = object.__new__(VerifiedAuthority)\n"),
+    ],
+    ids=("aliased-import", "attribute-call", "direct-call", "dunder-new"),
+)
+# Traceability: R-20 [Single construction authority]
+def test_external_authority_construction_is_a_blocker(make_config, tmp_repo, construction) -> None:  # type: ignore[no-untyped-def]
+    """Every construction form outside the defining module fails conformance."""
+    root = tmp_repo()
+    config = make_config(root)
+    _prepare_contract_evidence(root, config)
+    (root / "src" / "consumer.py").write_text(construction, encoding="utf-8")
+    result = check_pack(config, _Conforming())
+    assert result.status.value == "failed"
+    assert any(
+        "constructed outside its defining module" in finding.message
+        and "consumer.py" in finding.message
+        and finding.severity is Severity.BLOCKER
+        for finding in result.findings
+    )
+
+
+def test_construction_inside_the_defining_module_is_permitted(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """The verifier's own construction site never counts against the contract."""
+    root = tmp_repo()
+    config = make_config(root)
+    _prepare_contract_evidence(root, config)
+    (root / "src" / "authority.py").write_text(
+        "class VerifiedAuthority:\n    pass\n\n\ndef verify():\n    return VerifiedAuthority()\n",
+        encoding="utf-8",
+    )
+    assert check_pack(config, _Conforming()).status.value == "passed"
+
+
+def test_non_utf8_source_blocks_instead_of_crashing(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """An undecodable source file is a fail-closed BLOCKED verdict, never an escape."""
+    root = tmp_repo()
+    config = make_config(root)
+    _prepare_contract_evidence(root, config)
+    (root / "src" / "bad_bytes.py").write_bytes(b"\xff\xfe not decodable python source")
+    result = check_pack(config, _Conforming())
+    assert result.status.value == "blocked"
+    assert "cannot be inspected" in result.summary
 
 
 def test_conformance_blocks_unreadable_source_and_domain_gates(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]

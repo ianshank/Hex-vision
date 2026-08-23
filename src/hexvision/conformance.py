@@ -50,6 +50,70 @@ def _normalizer_count(source_root: Path) -> int:
     return count
 
 
+# The verified-authority class name is a structural contract identifier exactly
+# like "normalize_remote_url" above: DEC-016's corrective action is that this
+# type has one declaration and is constructed nowhere outside its own module,
+# so a fourth per-site authority re-implementation is rejected before merge.
+_AUTHORITY_CLASS: Final = "VerifiedAuthority"
+
+
+def _authority_declaration_files(source_root: Path) -> list[Path]:
+    """Return every file declaring the verified-authority class, AST-first."""
+    files: list[Path] = []
+    for path in sorted(source_root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if any(
+            isinstance(node, ast.ClassDef) and node.name == _AUTHORITY_CLASS
+            for node in ast.walk(tree)
+        ):
+            files.append(path)
+    return files
+
+
+def _authority_construction_sites(source_root: Path, defining: set[Path]) -> list[str]:
+    """Return authority construction call sites outside the defining module.
+
+    The matcher deliberately resolves the forms a well-intentioned
+    re-implementation would actually take — a direct call, an aliased import
+    (``from hexvision.authority import VerifiedAuthority as VA``), any
+    attribute call ending in the class name (``authority.VerifiedAuthority(...)``),
+    and the ``object.__new__(VerifiedAuthority)`` bypass — because a guard that
+    only matched the bare name would miss exactly the aliased copy that a
+    fourth recurrence would use. Attribute matching is conservative on purpose:
+    any ``.VerifiedAuthority(...)`` call counts, so a colliding third-party
+    name is surfaced for review rather than silently exempted.
+    """
+    sites: list[str] = []
+    for path in sorted(source_root.rglob("*.py")):
+        if path in defining:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        aliases = {_AUTHORITY_CLASS}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                for imported in node.names:
+                    if imported.name == _AUTHORITY_CLASS:
+                        aliases.add(imported.asname or imported.name)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            direct = isinstance(func, ast.Name) and func.id in aliases
+            attribute = isinstance(func, ast.Attribute) and func.attr == _AUTHORITY_CLASS
+            dunder_new = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "__new__"
+                and any(
+                    (isinstance(argument, ast.Name) and argument.id in aliases)
+                    or (isinstance(argument, ast.Attribute) and argument.attr == _AUTHORITY_CLASS)
+                    for argument in node.args
+                )
+            )
+            if direct or attribute or dunder_new:
+                sites.append(f"{path}:{node.lineno}")
+    return sites
+
+
 def _has_forbidden_flag(spec: TargetSpec, flags: list[str]) -> str | None:
     """Return the policy-owned forbidden threshold token found in a target command."""
     for command_part in spec.command:
@@ -256,7 +320,7 @@ def check_pack(  # noqa: PLR0911, PLR0912, PLR0915 - each contract clause report
             )
     try:
         normalizers = _normalizer_count(source_root)
-    except (OSError, SyntaxError) as exc:
+    except (OSError, SyntaxError, UnicodeDecodeError) as exc:
         return GateResult.blocked(
             "conformance",
             summary="normalizer source cannot be inspected",
@@ -269,6 +333,40 @@ def check_pack(  # noqa: PLR0911, PLR0912, PLR0915 - each contract clause report
                 4,
                 f"expected exactly one normalize_remote_url declaration, found {normalizers}",
                 "Keep the shared normalizer as the only declaration.",
+                blocker=True,
+            )
+        )
+    try:
+        authority_files = _authority_declaration_files(source_root)
+        construction_sites = _authority_construction_sites(source_root, set(authority_files))
+    except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+        return GateResult.blocked(
+            "conformance",
+            summary="authority source cannot be inspected",
+            reason=str(exc),
+            clause=_CLAUSE,
+        )
+    if len(authority_files) != 1:
+        findings.append(
+            _finding(
+                11,
+                (
+                    f"expected exactly one {_AUTHORITY_CLASS} declaration, "
+                    f"found {len(authority_files)}"
+                ),
+                "Keep hexvision.authority as the only verified-authority declaration.",
+                blocker=True,
+            )
+        )
+    if construction_sites:
+        findings.append(
+            _finding(
+                12,
+                (
+                    f"{_AUTHORITY_CLASS} is constructed outside its defining module at: "
+                    f"{', '.join(construction_sites)}"
+                ),
+                "Call hexvision.authority.verify_authority instead of constructing authority.",
                 blocker=True,
             )
         )
