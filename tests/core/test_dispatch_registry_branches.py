@@ -32,6 +32,15 @@ def test_dispatches_top_level_gate_commands(
     assert cli._dispatch(cast(argparse.Namespace, args), cast(Config, SimpleNamespace())) is result
 
 
+def test_dispatches_publication_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The release-time route constructs a normal gate rather than special-casing exits."""
+    result = GateResult.passed("publication", summary="ok")
+    monkeypatch.setattr(cli, "run_gate", lambda _gate, _config: result)
+    args = SimpleNamespace(command="publication", destination="github.com/acme/release")
+
+    assert cli._dispatch(cast(argparse.Namespace, args), cast(Config, SimpleNamespace())) is result
+
+
 def test_dispatches_pack_and_config_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pack and configuration routes serialize their actual discovered data."""
     monkeypatch.setattr(cli, "available", lambda: ("fake",))

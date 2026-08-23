@@ -54,7 +54,7 @@ PKG ?= hexvision
 PACK ?= jetson
 
 .PHONY: help install format lint types test cov secrets specs audit remotes \
-        projections traceability conformance guard-probe pre-pr clean \
+        projections traceability conformance publication guard-probe pre-pr clean \
         secrets-install audit-install
 
 help: ## Show this help
@@ -202,6 +202,9 @@ traceability: ## Requirement-traceability lint
 
 conformance: ## Assert PACK satisfies every clause of the Gate Harness Contract
 	$(RUN) python -m $(PKG).cli conformance --pack $(PACK) --json
+
+publication: ## Release-time public destination and G-PUB authorization control
+	$(RUN) python -m $(PKG).cli publication --json
 
 guard-probe: ## Show the PreToolUse guard's verdict for CMD, with tracing
 	@test -n "$(CMD)" || { echo 'usage: make guard-probe CMD="<command>"'; exit 2; }

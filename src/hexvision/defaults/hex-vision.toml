@@ -113,6 +113,20 @@ known_hosts = ["github.com", "gitlab.com", "huggingface.co", "codeberg.org"]
 git_executable = "git"
 
 # --------------------------------------------------------------------------
+# R-17: public publication is release-time work, never part of pre-PR.
+# --------------------------------------------------------------------------
+[publication]
+# The release Make target uses this reviewed destination when no CLI argument is
+# supplied; operators may still provide a different destination for assessment.
+default_destination = "github.com/ianshank/hex-vision"
+# This exact decision ID is policy, while its allowed identifier grammar remains
+# the shared traceability.decision_id_patterns configuration below.
+authorization_id = "G-PUB"
+# Keep the authority record configurable for adopters with a different governed
+# document location; a prose mention is insufficient because the gate parses rows.
+decision_log_path = "docs/decision-log.md"
+
+# --------------------------------------------------------------------------
 # Requirement traceability lint.
 # --------------------------------------------------------------------------
 [traceability]

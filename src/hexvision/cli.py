@@ -19,6 +19,7 @@ from hexvision.errors import ExitCode, HexVisionError
 from hexvision.gates.base import run_gate
 from hexvision.gates.contract import CoverageFloorGate, MakefileAuthorityGate, ZeroSkipAuditGate
 from hexvision.gates.model import GateResult
+from hexvision.gates.publication import PublicationGate
 from hexvision.packs.registry import available, load
 from hexvision.projections import check_projections
 from hexvision.remotes import check_remotes
@@ -41,6 +42,13 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("remotes", "traceability"):
         child = sub.add_parser(name)
         _json_argument(child)
+    publication = sub.add_parser("publication")
+    publication.add_argument(
+        "destination",
+        nargs="?",
+        help="publication destination; defaults to publication.default_destination",
+    )
+    _json_argument(publication)
     projections = sub.add_parser("projections")
     mode = projections.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true")
@@ -98,6 +106,8 @@ def _dispatch(  # noqa: PLR0911 - each explicit branch is a public CLI route.
         return check_remotes(config)
     if args.command == "traceability":
         return check_traceability(config)
+    if args.command == "publication":
+        return run_gate(PublicationGate(args.destination), config)
     if args.command == "projections":
         return check_projections(config, write=bool(args.write))
     if args.command == "conformance":
