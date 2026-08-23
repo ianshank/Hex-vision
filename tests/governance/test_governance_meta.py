@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import tomllib
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from tests.governance.conftest import run_process
 
@@ -154,8 +159,8 @@ def test_ci_pins_runner_disables_checkout_credentials_and_supplies_scanner_versi
     checkout_count = ci.count("uses: actions/checkout@")
     assert checkout_count == ci.count("persist-credentials: false")
     makefile = MAKEFILE.read_text(encoding="utf-8")
-    assert "GITLEAKS_VERSION ?= v8.28.0" in makefile
-    assert "OSV_VERSION ?= v2.2.4" in makefile
+    assert "override GITLEAKS_VERSION := v8.28.0" in makefile
+    assert "override OSV_VERSION := v2.2.4" in makefile
     assert "checksum mismatch; refusing to install" in makefile
     assert "make secrets-install INSTALL_DIR=" in ci
     assert "make audit-install INSTALL_DIR=" in ci
@@ -234,15 +239,83 @@ def test_requirement_markers_cited_by_tests_resolve_when_governance_docs_exist()
     assert missing == [], f"test requirement markers absent from charter or spec deltas: {missing}"
 
 
-def test_make_secrets_fails_closed_without_gitleaks(git_repo: Path) -> None:
+def test_make_secrets_fails_closed_without_gitleaks() -> None:
     """No-gitleaks machine: the secrets target blocks rather than silently skipping."""
-    result = run_process(["make", "secrets", "GITLEAKS=definitely-not-gitleaks"], cwd=REPO_ROOT)
+    make = shutil.which("make")
+    assert make is not None
+    result = run_process([make, "secrets"], cwd=REPO_ROOT, env={"PATH": "/usr/bin:/bin"})
     assert result.returncode != 0
     assert "gitleaks not found" in result.stdout
 
 
-def test_make_audit_fails_closed_without_osv_scanner(git_repo: Path) -> None:
+def test_make_audit_fails_closed_without_osv_scanner() -> None:
     """No-osv-scanner machine: the audit target blocks rather than silently skipping."""
-    result = run_process(["make", "audit", "OSV=definitely-not-osv"], cwd=REPO_ROOT)
+    make = shutil.which("make")
+    assert make is not None
+    result = run_process([make, "audit"], cwd=REPO_ROOT, env={"PATH": "/usr/bin:/bin"})
     assert result.returncode != 0
     assert "osv-scanner not found" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("make_assignment", "environment"),
+    [
+        ("GITLEAKS=true", None),
+        ("GITLEAKS=/bin/echo", None),
+        ("GITLEAKS=", None),
+        (None, {"GITLEAKS": "true"}),
+        (None, {"GITLEAKS": "/bin/echo"}),
+        (None, {"GITLEAKS": ""}),
+    ],
+)
+def test_make_secrets_ignores_untrusted_scanner_overrides_and_blocks_a_planted_secret(
+    make_assignment: str | None, environment: dict[str, str] | None
+) -> None:
+    """A scanner selector supplied at invocation cannot turn INV-1 into a no-op."""
+    planted = REPO_ROOT / "planted-control-bypass-secret.txt"
+    secret = f"ghp_{sha256(b'gitleaks-control-bypass').hexdigest()[:36]}"
+    planted.write_text(f"credential = {secret}\n", encoding="utf-8")
+    try:
+        arguments = ["make", "secrets"]
+        if make_assignment is not None:
+            arguments.append(make_assignment)
+        result = run_process(arguments, cwd=REPO_ROOT, env=environment)
+    finally:
+        planted.unlink(missing_ok=True)
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "leaks found" in output
+
+
+def test_make_secrets_rejects_a_path_shadow_with_the_wrong_version(tmp_path: Path) -> None:
+    """Scanner discovery is insufficient: a same-named binary must prove its pinned version."""
+    fake = tmp_path / "gitleaks"
+    fake.write_text("#!/usr/bin/env bash\nprintf '0.0.0\\n'\n", encoding="utf-8")
+    fake.chmod(0o755)
+    result = run_process(
+        ["make", "secrets"],
+        cwd=REPO_ROOT,
+        env={"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+    )
+    assert result.returncode != 0
+    assert "gitleaks identity verification failed: expected version 8.28.0, observed 0.0.0" in (
+        result.stdout + result.stderr
+    )
+
+
+def test_make_audit_rejects_a_path_shadow_with_the_wrong_version(tmp_path: Path) -> None:
+    """The dependency scanner receives the same pinned-identity protection as gitleaks."""
+    fake = tmp_path / "osv-scanner"
+    fake.write_text(
+        "#!/usr/bin/env bash\nprintf 'osv-scanner version: 0.0.0\\n'\n", encoding="utf-8"
+    )
+    fake.chmod(0o755)
+    result = run_process(
+        ["make", "audit"],
+        cwd=REPO_ROOT,
+        env={"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+    )
+    assert result.returncode != 0
+    assert "osv-scanner identity verification failed: expected version 2.2.4, observed" in (
+        result.stdout + result.stderr
+    )

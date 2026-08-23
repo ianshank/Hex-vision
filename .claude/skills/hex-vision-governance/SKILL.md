@@ -30,6 +30,7 @@ Use the per-milestone PR and engineering-hour budget in the charter. Process-sco
 - **DEC-003** (2026-08-22): publication targets are public GitHub and Hugging Face after the publication gate.
 - **DEC-004** (2026-08-22): build the complete scaffold in this session.
 - **RB-001** (2026-08-22): re-baseline after the supplied archive lacked a Python pack and planning documents.
+- **DEC-009** (2026-08-22): retain `@governance-skip` decisions as audit evidence, but make every pytest skip and xfail fail; declared hardware-in-the-loop gate status is unaffected.
 
 This section is mechanically checked by `tests/governance/test_skill_freshness.py`: every decision-log ID dated on or after the date in this heading must appear here.
 

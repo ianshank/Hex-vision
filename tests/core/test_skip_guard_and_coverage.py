@@ -9,17 +9,19 @@ import runpy
 import shutil
 import sys
 from pathlib import Path
-from typing import Final
+from typing import Final, TypeAlias
 
 import pytest
 from coverage import Coverage
 
+from hexvision.gates.contract import CoverageFloorGate
 from tests.support.process import run_process
 
 TEST_ROOT: Final = Path(__file__).resolve().parents[1]
 # This module owns the one actual child-process call; all other tests delegate to it.
 ALLOWED_DIRECT_PROCESS_MODULE: Final = TEST_ROOT / "support" / "process.py"
 DIRECT_PROCESS_METHODS: Final = frozenset({"run", "Popen", "call", "check_call", "check_output"})
+SkipScenario: TypeAlias = tuple[str, str | None, str, int, str]
 
 
 def _direct_subprocess_call_lines(source: str) -> tuple[int, ...]:
@@ -104,7 +106,7 @@ def test_shared_process_helper_removes_coverage_control_variables(
 
 
 @pytest.mark.parametrize(
-    ("name", "decision_log", "test_source", "expected"),
+    "scenario",
     [
         (
             "forged",
@@ -115,6 +117,7 @@ def test_shared_process_helper_removes_coverage_control_variables(
                 "@pytest.mark.skip\ndef test_x(): pass\n"
             ),
             1,
+            "has no valid @governance-skip decision",
         ),
         (
             "stale",
@@ -125,12 +128,14 @@ def test_shared_process_helper_removes_coverage_control_variables(
                 "@pytest.mark.skip\ndef test_x(): pass\n"
             ),
             1,
+            "has no valid @governance-skip decision",
         ),
         (
             "no_reason",
             "DEC-1 approved\n",
             "import pytest\n# @governance-skip: DEC-1\n@pytest.mark.skip\ndef test_x(): pass\n",
             1,
+            "has no valid @governance-skip decision",
         ),
         (
             "unrelated",
@@ -140,6 +145,7 @@ def test_shared_process_helper_removes_coverage_control_variables(
                 "import pytest\n@pytest.mark.skip\ndef test_x(): pass\n"
             ),
             1,
+            "has no valid @governance-skip decision",
         ),
         (
             "unreadable",
@@ -150,6 +156,7 @@ def test_shared_process_helper_removes_coverage_control_variables(
                 "@pytest.mark.skip\ndef test_x(): pass\n"
             ),
             1,
+            "has no valid @governance-skip decision",
         ),
         (
             "authorized",
@@ -159,19 +166,17 @@ def test_shared_process_helper_removes_coverage_control_variables(
                 "import pytest\n# @governance-skip: DEC-1 hardware unavailable\n"
                 "@pytest.mark.skip\ndef test_x(): pass\n"
             ),
-            0,
+            1,
+            "cites authorized @governance-skip decision DEC-1",
         ),
     ],
 )
 def test_runtime_skip_guard_resolves_test_local_decisions(
     tmp_path: Path,
-    name: str,
-    decision_log: str | None,
-    test_source: str,
-    expected: int,
+    scenario: SkipScenario,
 ) -> None:
     """A miniature pytest run proves each authorization bypass is rejected behaviorally."""
-    del name
+    _, decision_log, test_source, expected, reason = scenario
     root = tmp_path
     test_root = Path(__file__).parents[1]
     shutil.copy(test_root / "conftest.py", root / "conftest.py")
@@ -189,6 +194,7 @@ def test_runtime_skip_guard_resolves_test_local_decisions(
         cwd=root,
     )
     assert completed.returncode == expected, completed.stdout + completed.stderr
+    assert reason in completed.stdout + completed.stderr
 
 
 def test_coverage_report_includes_unimported_source_file(tmp_path: Path) -> None:
@@ -208,3 +214,33 @@ def test_coverage_report_includes_unimported_source_file(tmp_path: Path) -> None
     coverage.json_report(outfile=str(report))
     files = json.loads(report.read_text(encoding="utf-8"))["files"]
     assert any(Path(filename).name == "unimported.py" for filename in files)
+
+
+def test_coverage_gate_rejects_a_pragma_excluded_source_file(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """A source-level pragma cannot make untested executable code look covered."""
+    root = tmp_repo()
+    source = root / "src" / "untested.py"
+    source.parent.mkdir()
+    source.write_text(
+        "def operationally_untested():  # pragma: no cover\n    return 1\n", encoding="utf-8"
+    )
+    (root / "coverage.json").write_text(
+        json.dumps(
+            {
+                "files": {
+                    "src/untested.py": {
+                        "summary": {
+                            "num_statements": 0,
+                            "percent_covered": 100,
+                            "percent_covered_branches": 100,
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = CoverageFloorGate().check(make_config(root, None))
+    assert result.status.value == "failed"
+    assert any(finding.id == "COVERAGE-PRAGMA-src/untested.py-1" for finding in result.findings)
+    assert any("coverage pragma" in finding.message for finding in result.findings)

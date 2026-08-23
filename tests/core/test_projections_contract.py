@@ -80,13 +80,24 @@ def test_projection_loads_repo_data_module_without_pythonpath(make_config, tmp_r
 def test_coverage_gate_reports_each_floor(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """Line and branch deficits are both reported rather than stopping at one file."""
     root = tmp_repo()
+    (root / "src").mkdir()
     (root / "coverage.json").write_text(
         json.dumps(
             {
                 "files": {
-                    "low.py": {"summary": {"percent_covered": 80, "percent_covered_branches": 70}},
+                    "low.py": {
+                        "summary": {
+                            "num_statements": 100,
+                            "percent_covered": 80,
+                            "percent_covered_branches": 70,
+                        }
+                    },
                     "high.py": {
-                        "summary": {"percent_covered": 100, "percent_covered_branches": 100}
+                        "summary": {
+                            "num_statements": 100,
+                            "percent_covered": 100,
+                            "percent_covered_branches": 100,
+                        }
                     },
                 }
             }
@@ -110,6 +121,15 @@ def test_coverage_gate_blocks_missing_report(make_config, tmp_repo) -> None:  # 
     assert CoverageFloorGate().check(make_config(tmp_repo(), None)).status.value == "blocked"
 
 
+def test_coverage_gate_blocks_a_missing_configured_source_root(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """Coverage cannot claim a quality result when its declared source scope is absent."""
+    root = tmp_repo()
+    (root / "coverage.json").write_text('{"files": {}}', encoding="utf-8")
+    result = CoverageFloorGate().check(make_config(root, None))
+    assert result.status.value == "blocked"
+    assert result.summary == "coverage source root is unavailable"
+
+
 # Traceability: R-9
 def test_zero_skip_and_makefile_authority(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
     """AST skip audit and workflow authority both reject explicit bypasses."""
@@ -126,6 +146,28 @@ def test_zero_skip_and_makefile_authority(make_config, tmp_repo) -> None:  # typ
     config = make_config(root)
     assert ZeroSkipAuditGate().check(config).status.value == "failed"
     assert MakefileAuthorityGate().check(config).status.value == "failed"
+
+
+def test_zero_skip_gate_rejects_an_authorized_annotation(make_config, tmp_repo) -> None:  # type: ignore[no-untyped-def]
+    """A logged decision remains visible in a failure but cannot authorize a pytest skip."""
+    root = tmp_repo()
+    tests = root / "tests"
+    tests.mkdir()
+    (tests / "test_authorized.py").write_text(
+        (
+            "import pytest\n"
+            "# @governance-skip: DEC-1 hardware unavailable\n"
+            "@pytest.mark.skip\n"
+            "def test_x(): pass\n"
+        ),
+        encoding="utf-8",
+    )
+    docs = root / "docs"
+    docs.mkdir()
+    (docs / "decision-log.md").write_text("DEC-1 approved\n", encoding="utf-8")
+    result = ZeroSkipAuditGate().check(make_config(root))
+    assert result.status.value == "failed"
+    assert "authorized @governance-skip decision DEC-1" in result.findings[0].message
 
 
 def test_projections_block_unknown_renderer_and_malformed_data(

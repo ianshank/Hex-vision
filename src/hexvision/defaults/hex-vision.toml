@@ -176,6 +176,27 @@ renderer = "jira_csv"
 # The report location is configurable because CI commonly writes artifacts
 # outside the checkout while local runs usually write beside pyproject.toml.
 report_path = "coverage.json"
+# A statement-free module has no executable behavior to cover. These package
+# markers are centrally reviewed exceptions with their reason rather than
+# implicit 100% coverage from a zero-statement denominator.
+[[coverage.zero_statement_exceptions]]
+path = "src/hexvision/gates/__init__.py"
+reason = "Package marker exports no runtime behavior; concrete gates carry the executable policy."
+
+[[coverage.zero_statement_exceptions]]
+path = "src/hexvision/packs/__init__.py"
+reason = "Package marker exports no runtime behavior; pack interfaces are tested in their modules."
+
+# Source-level no-cover pragmas are exceptions to measured coverage and need an
+# explicit reviewable rationale. Do not add a broad file glob: each exemption is
+# deliberately narrow so an untested function cannot hide beside it.
+[[coverage.pragma_no_cover_exceptions]]
+path = "src/hexvision/cli.py"
+reason = "The console-script entry guard delegates to main(), which is exercised directly."
+
+[[coverage.pragma_no_cover_exceptions]]
+path = "src/hexvision/config.py"
+reason = "The disappearing-file race is guarded by the caller's existence check and converts to ConfigError."
 
 [makefile_authority]
 # The workflow is policy input: repositories may place CI definitions in a

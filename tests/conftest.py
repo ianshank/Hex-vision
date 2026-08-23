@@ -20,8 +20,8 @@ from tests.support.process import coverage_controls_sanitized, run_process
 _SKIP = re.compile(r"^\s*#\s*@governance-skip:\s*(\S+)\s+(\S.*)\s*$")
 
 
-def _authorized(item: pytest.Item) -> bool:
-    """Resolve a test-local marker against the configured real decision log.
+def _authorized_decision(item: pytest.Item) -> str | None:
+    """Resolve a test-local marker to preserve its audit trail, never to permit a skip.
 
     The annotation is searched only in the contiguous comment/decorator block
     immediately above this item's test declaration. A valid marker elsewhere in
@@ -36,7 +36,7 @@ def _authorized(item: pytest.Item) -> bool:
         decisions = decision_log.read_text(encoding="utf-8")
         patterns = tuple(config.require("traceability.decision_id_patterns"))
     except Exception:
-        return False
+        return None
     start = item.location[1]
     header: list[str] = []
     for line in reversed(lines[:start]):
@@ -47,26 +47,36 @@ def _authorized(item: pytest.Item) -> bool:
         break
     for line in header:
         marker = _SKIP.match(line)
-        if marker and any(re.fullmatch(pattern, marker.group(1)) for pattern in patterns):
-            return marker.group(1) in decisions and bool(marker.group(2).strip())
-    return False
+        if (
+            marker
+            and any(re.fullmatch(pattern, marker.group(1)) for pattern in patterns)
+            and marker.group(1) in decisions
+            and bool(marker.group(2).strip())
+        ):
+            return marker.group(1)
+    return None
 
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(
     item: pytest.Item, call: pytest.CallInfo[object]
 ) -> Generator[None, Result[pytest.TestReport], None]:
-    """Convert every runtime skip or xfail into failure unless a recorded decision exists."""
+    """Convert every runtime skip or xfail into failure while naming a cited decision."""
     outcome = yield
     report = outcome.get_result()
-    if (
-        report.when in {"setup", "call"}
-        and (report.outcome == "skipped" or hasattr(report, "wasxfail"))
-        and not _authorized(item)
+    if report.when in {"setup", "call"} and (
+        report.outcome == "skipped" or hasattr(report, "wasxfail")
     ):
+        decision = _authorized_decision(item)
         report.outcome = "failed"
         report.longrepr = (
             "governance guard: skipped or xfailed test has no valid @governance-skip decision"
+            if decision is None
+            else (
+                "governance guard: skipped or xfailed test cites authorized "
+                f"@governance-skip decision {decision}; the project zero-skip policy "
+                "still forbids it"
+            )
         )
 
 

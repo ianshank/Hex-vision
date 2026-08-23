@@ -25,19 +25,25 @@ ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 # tool version cannot float between local and CI.
 PM ?= uv
 RUN ?= $(PM) run --
-GITLEAKS ?= gitleaks
-GITLEAKS_VERSION ?= v8.28.0
+# Security scanners and all of their identity pins are deliberately immune to
+# environment and command-line Make assignments. A caller-controlled executable
+# can acknowledge any scan without reading the repository, which is no scan.
+override GITLEAKS := gitleaks
+override GITLEAKS_VERSION := v8.28.0
 GITLEAKS_RELEASE_VERSION := $(patsubst v%,%,$(GITLEAKS_VERSION))
-GITLEAKS_LINUX_X64_SHA256 ?= a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
-GITLEAKS_LINUX_ARM64_SHA256 ?= eff65261156100e5d94a6b3dec313d532fddfe19ae1590bf7a2b4f2699128356
-GITLEAKS_DARWIN_X64_SHA256 ?= edf5a507008b0d2ef4959575772772770586409c1f6f74dabf19cbe7ec341ced
-GITLEAKS_DARWIN_ARM64_SHA256 ?= d942f3ad147250c9edbaab3fed9e482f98d3b59ba10ae97b8d75647e3ade492c
-OSV ?= osv-scanner
-OSV_VERSION ?= v2.2.4
-OSV_LINUX_X64_SHA256 ?= 7702cd1e5d9f5059dd9570f4ad967f27d3c5f5391b371ec937b384c238177f55
-OSV_LINUX_ARM64_SHA256 ?= 94d1c520b30a7e28b0189b2a1dd24c7b08f41887186e8ae3f811067ec9ed7043
-OSV_DARWIN_X64_SHA256 ?= 589e673d8d6585fecf4384fa4d85cb9fa5aa7f6ff6a8c4e5ef1472e8217d5875
-OSV_DARWIN_ARM64_SHA256 ?= bd964925a27037db3a0426ac411a6599cd18781bb2bd72ce02adf4a6a1fe9058
+override GITLEAKS_LINUX_X64_SHA256 := a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+override GITLEAKS_LINUX_ARM64_SHA256 := eff65261156100e5d94a6b3dec313d532fddfe19ae1590bf7a2b4f2699128356
+override GITLEAKS_DARWIN_X64_SHA256 := edf5a507008b0d2ef4959575772772770586409c1f6f74dabf19cbe7ec341ced
+override GITLEAKS_DARWIN_ARM64_SHA256 := d942f3ad147250c9edbaab3fed9e482f98d3b59ba10ae97b8d75647e3ade492c
+override OSV := osv-scanner
+override OSV_VERSION := v2.2.4
+OSV_RELEASE_VERSION := $(patsubst v%,%,$(OSV_VERSION))
+override OSV_LINUX_X64_SHA256 := 7702cd1e5d9f5059dd9570f4ad967f27d3c5f5391b371ec937b384c238177f55
+override OSV_LINUX_ARM64_SHA256 := 94d1c520b30a7e28b0189b2a1dd24c7b08f41887186e8ae3f811067ec9ed7043
+override OSV_DARWIN_X64_SHA256 := 589e673d8d6585fecf4384fa4d85cb9fa5aa7f6ff6a8c4e5ef1472e8217d5875
+override OSV_DARWIN_ARM64_SHA256 := bd964925a27037db3a0426ac411a6599cd18781bb2bd72ce02adf4a6a1fe9058
+# INSTALL_DIR and INSTALL_METHOD affect only the explicit installer targets;
+# secrets and audit select only the protected executable names above.
 INSTALL_DIR ?= $(HOME)/.local/bin
 # CI selects `release` because it exports INSTALL_DIR to later steps. Local
 # `auto` preserves the existing Go installer when Go is available.
@@ -97,11 +103,16 @@ types: ## Static types (config in pyproject.toml; strict mode, whole project)
 # `git` scans COMMITTED HISTORY (a secret added and later deleted still lives
 # in the objects).
 secrets: ## Secret scan of working tree AND history. Fails closed if gitleaks is absent.
-	@command -v $(GITLEAKS) >/dev/null 2>&1 || { \
+	@tool_path="$$(command -v "$(GITLEAKS)" 2>/dev/null)" || { \
 	  echo "gitleaks not found. A security gate that silently skips is worse"; \
 	  echo "than no gate, so this fails closed. Install it with:"; \
 	  echo "    make secrets-install"; \
-	  exit 1; }
+	  exit 1; }; \
+	  observed="$$( "$$tool_path" version 2>&1 || true)"; \
+	  test "$$observed" = "$(GITLEAKS_RELEASE_VERSION)" || { \
+	    printf 'gitleaks identity verification failed: expected version %s, observed %s\n' \
+	      "$(GITLEAKS_RELEASE_VERSION)" "$${observed:-<no version output>}"; \
+	    exit 1; }
 	$(GITLEAKS) dir $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
 	$(GITLEAKS) git $(ROOT) --config $(ROOT)/.gitleaks.toml --redact --no-banner
 
@@ -137,11 +148,16 @@ specs: ## Strict spec validation (wrapper falls back to structural validator)
 # advisory must be a named line with an owner, a reason and an expiry, which
 # `pip-audit --ignore-vuln` and `npm audit --audit-level` cannot express.
 audit: ## Dependency vulnerability scan. Ignore ONLY named, documented advisories.
-	@command -v $(OSV) >/dev/null 2>&1 || { \
+	@tool_path="$$(command -v "$(OSV)" 2>/dev/null)" || { \
 	  echo "osv-scanner not found. This gate fails closed rather than skip."; \
 	  echo "Install it with:"; \
 	  echo "    make audit-install"; \
-	  exit 1; }
+	  exit 1; }; \
+	  observed="$$( "$$tool_path" --version 2>&1 || true)"; \
+	  case "$$observed" in *"osv-scanner version: $(OSV_RELEASE_VERSION)"*) ;; *) \
+	    printf 'osv-scanner identity verification failed: expected version %s, observed %s\n' \
+	      "$(OSV_RELEASE_VERSION)" "$${observed:-<no version output>}"; \
+	    exit 1 ;; esac
 	@test -f $(ROOT)/uv.lock || { \
 	  echo "uv.lock is absent, so there is nothing pinned to audit."; \
 	  echo "This fails closed rather than report a clean scan of nothing."; \
