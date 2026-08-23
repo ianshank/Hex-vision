@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Final, TypeGuard
 
 from hexvision.config import Config
+from hexvision.decision_log import decision_ids
 from hexvision.gates.base import Gate
 from hexvision.gates.model import Finding, GateResult, Severity
 from hexvision.observability import get_logger
@@ -290,14 +291,14 @@ def _is_widened(current: Any, baseline: Any, direction: Any, failsafe_strength: 
 
 
 def _decision_exists(config: Config, policy: Mapping[str, Any], decision_id: Any) -> bool:
-    """Confirm that a mission's decision ID is syntactically valid and recorded adjacent to code."""
+    """Confirm that a mission's ID is valid and occurs in a real configured log record."""
     if not isinstance(decision_id, str) or not re.fullmatch(
         str(policy["decision_id_pattern"]), decision_id
     ):
         return False
     path = config.root / str(policy["decision_log_path"])
     try:
-        return decision_id in path.read_text(encoding="utf-8")
+        return decision_id in decision_ids(config, path)
     except OSError:
         return False
 

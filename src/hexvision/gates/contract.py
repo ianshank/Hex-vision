@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from hexvision.config import Config
+from hexvision.decision_log import decision_ids
 from hexvision.gates.base import Gate
 from hexvision.gates.model import Finding, GateResult, Severity
 
@@ -36,14 +37,9 @@ def _branch_percentage(summary: dict[str, Any]) -> float:
 
 
 def _decisions(config: Config) -> set[str]:
-    """Extract all policy-shaped decision ids from the configured decision log."""
+    """Extract IDs only from records that pass the shared decision-log grammar."""
     log = config.resolve_path("traceability.decision_log_path")
-    text = log.read_text(encoding="utf-8")
-    return {
-        match.group(0)
-        for pattern in config.require("traceability.decision_id_patterns")
-        for match in re.finditer(str(pattern), text)
-    }
+    return decision_ids(config, log, clause="INV-2")
 
 
 def _authorized_skip_decision(

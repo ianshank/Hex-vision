@@ -32,8 +32,9 @@ def test_publication_blocks_without_g_pub_authorization(tmp_repo: Any) -> None:
 
     assert result.status is GateStatus.BLOCKED
     assert result.findings[0].message == (
-        "required publication authorization gate 'G-PUB' has no decision-log entry "
-        "in docs/decision-log.md"
+        "required publication authorization gate 'G-PUB' has no valid decision-log entry "
+        "in docs/decision-log.md: line 1 required cell 'decision' is blank or a configured "
+        "placeholder"
     )
 
 
@@ -83,6 +84,155 @@ def test_publication_permits_normalized_allowlisted_destination_with_g_pub(tmp_r
 
     assert result.status is GateStatus.PASSED
     assert result.measurements["destination"] == "github.com/acme/release"
+
+
+@pytest.mark.parametrize(
+    ("decision_log", "line_number", "reason"),
+    [
+        (
+            "# 2026-08-22 | G-PUB | approved release | reviewer\n",
+            1,
+            "date cell does not match configured format '%Y-%m-%d'",
+        ),
+        (
+            "The release is not authorized by G-PUB until a decision is recorded.\n",
+            1,
+            "line is not a decision-log table row",
+        ),
+        (
+            "```\n2026-08-22 | G-PUB | approved release | reviewer\n```\n",
+            2,
+            "line is inside a fenced code block",
+        ),
+        (
+            "<!--\n2026-08-22 | G-PUB | approved release | reviewer\n-->\n",
+            2,
+            "line is inside an HTML comment",
+        ),
+        (
+            "    2026-08-22 | G-PUB | approved release | reviewer\n",
+            1,
+            "line is indented and cannot be a top-level decision-log row",
+        ),
+        (
+            "| --- | --- | --- | --- |\n",
+            1,
+            None,
+        ),
+        (
+            "2026-08-22 | G-PUB | approved release\n",
+            1,
+            "row has 3 cells; configured schema requires 4",
+        ),
+        (
+            "2026-08-22 | G-PUB | approved release | reviewer | extra\n",
+            1,
+            "row has 5 cells; configured schema requires 4",
+        ),
+        (
+            "2026-8-22 | G-PUB | approved release | reviewer\n",
+            1,
+            "date cell does not match configured format '%Y-%m-%d'",
+        ),
+        (
+            "2026-08-22 | G-PUB |  | reviewer\n",
+            1,
+            "required cell 'decision' is blank or a configured placeholder",
+        ),
+        (
+            "2026-08-22 | G-PUB | TBD | reviewer\n",
+            1,
+            "required cell 'decision' is blank or a configured placeholder",
+        ),
+        (
+            "2026-08-22 | G-PUB | - | reviewer\n",
+            1,
+            "required cell 'decision' is blank or a configured placeholder",
+        ),
+        (
+            "2026-08-22 | G-PUB | N/A | reviewer\n",
+            1,
+            "required cell 'decision' is blank or a configured placeholder",
+        ),
+    ],
+)
+# Traceability: R-17
+def test_publication_rejects_invalid_g_pub_pseudo_records(
+    tmp_repo: Any, decision_log: str, line_number: int, reason: str | None
+) -> None:
+    """Every pseudo-record fails with its grammar reason rather than gaining authority."""
+    root = tmp_repo('[remotes]\nallowlist=["github.com/acme/release"]\n')
+    _publication_repo(root, decision_log)
+
+    result = PublicationGate("https://github.com/acme/release.git").check(
+        load_config(root=root, env={})
+    )
+
+    assert result.status is GateStatus.BLOCKED
+    expected = (
+        "required publication authorization gate 'G-PUB' has no decision-log entry "
+        "in docs/decision-log.md"
+        if reason is None
+        else (
+            "required publication authorization gate 'G-PUB' has no valid decision-log entry "
+            f"in docs/decision-log.md: line {line_number} {reason}"
+        )
+    )
+    assert result.findings[0].message == expected
+
+
+# Traceability: R-17
+def test_publication_rejects_record_for_a_different_gate_id(tmp_repo: Any) -> None:
+    """A well-formed decision for another gate cannot be substituted for G-PUB."""
+    root = tmp_repo('[remotes]\nallowlist=["github.com/acme/release"]\n')
+    _publication_repo(root, "2026-08-22 | DEC-001 | approved release | reviewer\n")
+
+    result = PublicationGate("https://github.com/acme/release.git").check(
+        load_config(root=root, env={})
+    )
+
+    assert result.status is GateStatus.BLOCKED
+    assert result.findings[0].message == (
+        "required publication authorization gate 'G-PUB' has no decision-log entry "
+        "in docs/decision-log.md"
+    )
+
+
+@pytest.mark.parametrize(
+    ("destination", "reason"),
+    [
+        (
+            "https://github.com/acme/release.git?branch=release",
+            "remote URL contains a query component",
+        ),
+        (
+            "https://github.com/acme/release.git#release",
+            "remote URL contains a fragment component",
+        ),
+        (
+            "https://github.com/acme/release.git?redirect=https://evil.example",
+            "remote URL contains a query component",
+        ),
+        (
+            "https://github.com/acme/release.git?redirect=https://evil.example#@evil.example",
+            "remote URL contains query and fragment components",
+        ),
+    ],
+)
+# Traceability: R-17
+def test_publication_rejects_destination_query_and_fragment_components(
+    tmp_repo: Any, destination: str, reason: str
+) -> None:
+    """Git destinations reject components whose semantics would otherwise be discarded."""
+    root = tmp_repo('[remotes]\nallowlist=["github.com/acme/release"]\n')
+    _publication_repo(root, "2026-08-22 | G-PUB | approved release | reviewer\n")
+
+    result = PublicationGate(destination).check(load_config(root=root, env={}))
+
+    assert result.status is GateStatus.FAILED
+    assert result.findings[0].message == (
+        f"remote {destination!r} is unsafe or unparseable: {reason}"
+    )
 
 
 def test_publication_blocks_when_shared_remote_policy_is_unavailable(tmp_repo: Any) -> None:

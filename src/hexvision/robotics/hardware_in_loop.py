@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 from hexvision.config import Config
+from hexvision.decision_log import load_decision_log_schema, read_decision_log
 from hexvision.gates.base import Gate
 from hexvision.gates.model import Finding, GateResult, Severity
 from hexvision.observability import get_logger
@@ -158,16 +159,16 @@ def _policy(config: Config, clause: str) -> dict[str, Any]:
 
 
 def _authorising_decision(config: Config, policy: Mapping[str, Any], gate_name: str) -> str | None:
-    """Find an entry that explicitly names the absent gate and a configured decision identifier."""
+    """Find a valid record that explicitly names the absent gate and configured ID."""
     path = config.root / str(policy["decision_log_path"])
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        schema = load_decision_log_schema(config)
+        records = read_decision_log(path, schema).records
     except OSError:
         return None
     pattern = re.compile(str(policy["decision_id_pattern"]))
-    for line in lines:
-        if gate_name in line:
-            match = pattern.search(line)
-            if match:
-                return match.group(0)
+    for record in records:
+        identifier = record.value(schema, schema.identifier_column)
+        if gate_name in schema.delimiter.join(record.cells) and pattern.fullmatch(identifier):
+            return identifier
     return None

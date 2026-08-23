@@ -13,6 +13,12 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 from hexvision.config import Config
+from hexvision.decision_log import (
+    DecisionLogParseResult,
+    DecisionLogSchema,
+    load_decision_log_schema,
+    read_decision_log,
+)
 from hexvision.errors import HexVisionError
 from hexvision.gates.base import Gate
 from hexvision.gates.model import Finding, GateResult, GateStatus
@@ -23,7 +29,6 @@ __all__ = ["PublicationGate"]
 
 _CLAUSE: Final = "R-17"
 _LOG: Final = get_logger(__name__)
-_DECISION_ENTRY_COLUMNS: Final = 4
 
 
 class PublicationGate(Gate):
@@ -80,7 +85,7 @@ class PublicationGate(Gate):
             )
 
         try:
-            authorized = _has_authorization(config, policy)
+            authorization = _authorization(config, policy)
         except OSError as exc:
             return GateResult.blocked(
                 self.name,
@@ -89,14 +94,11 @@ class PublicationGate(Gate):
                 clause=self.clause,
                 measurements=measurements,
             )
-        if not authorized:
+        if not authorization[0]:
             return GateResult.blocked(
                 self.name,
                 summary="publication authorization is absent",
-                reason=(
-                    f"required publication authorization gate {policy['authorization_id']!r} "
-                    f"has no decision-log entry in {policy['decision_log_path']}"
-                ),
+                reason=authorization[1],
                 clause=self.clause,
                 remediation=(
                     "Record a real G-PUB decision-log entry before attempting public publication."
@@ -119,6 +121,7 @@ def _policy(config: Config) -> dict[str, Any]:
         "decision_log_path": config.require("publication.decision_log_path", clause=_CLAUSE),
         "default_destination": config.require("publication.default_destination", clause=_CLAUSE),
         "decision_id_patterns": config.require("traceability.decision_id_patterns", clause=_CLAUSE),
+        "decision_log_schema": load_decision_log_schema(config, clause=_CLAUSE),
     }
     if not all(
         isinstance(policy[key], str) and policy[key].strip()
@@ -149,18 +152,35 @@ def _destination(explicit: str | None, policy: Mapping[str, Any]) -> str:
     return destination
 
 
-def _has_authorization(config: Config, policy: Mapping[str, Any]) -> bool:
-    """Require an actual decision-log row, not a prose mention of the authorization ID."""
+def _authorization(config: Config, policy: Mapping[str, Any]) -> tuple[bool, str]:
+    """Require an actual configured record and retain why a pseudo-record was rejected."""
     path = config.root / str(policy["decision_log_path"])
-    for line in path.read_text(encoding="utf-8").splitlines():
-        columns = tuple(value.strip() for value in line.split("|"))
-        if (
-            len(columns) >= _DECISION_ENTRY_COLUMNS
-            and columns[1] == policy["authorization_id"]
-            and all(columns[index] for index in (0, 2, 3))
-        ):
-            return True
-    return False
+    schema = policy["decision_log_schema"]
+    if not isinstance(schema, DecisionLogSchema):
+        raise TypeError("publication decision-log schema is invalid")
+    parsed = read_decision_log(path, schema)
+    authorization_id = str(policy["authorization_id"])
+    if parsed.record(schema, authorization_id) is not None:
+        return True, ""
+    return False, _absent_authorization_reason(
+        parsed, authorization_id, str(policy["decision_log_path"])
+    )
+
+
+def _absent_authorization_reason(
+    parsed: DecisionLogParseResult, authorization_id: str, decision_log_path: str
+) -> str:
+    """Name an invalid candidate without treating generic explanatory prose as authorization."""
+    rejection = parsed.rejection_for(authorization_id)
+    if rejection is None:
+        return (
+            f"required publication authorization gate {authorization_id!r} "
+            f"has no decision-log entry in {decision_log_path}"
+        )
+    return (
+        f"required publication authorization gate {authorization_id!r} has no valid decision-log "
+        f"entry in {decision_log_path}: line {rejection.line_number} {rejection.reason}"
+    )
 
 
 def _publication_findings(findings: tuple[Finding, ...]) -> tuple[Finding, ...]:

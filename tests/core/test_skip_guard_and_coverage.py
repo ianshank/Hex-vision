@@ -110,7 +110,7 @@ def test_shared_process_helper_removes_coverage_control_variables(
     [
         (
             "forged",
-            "DEC-1 approved\n",
+            "2026-08-22 | DEC-1 | approved | reviewer\n",
             (
                 "# @governance-skip: DEC-999 forged\n"
                 "import pytest\n# @governance-skip: DEC-999 forged\n"
@@ -121,7 +121,7 @@ def test_shared_process_helper_removes_coverage_control_variables(
         ),
         (
             "stale",
-            "DEC-2 approved\n",
+            "2026-08-22 | DEC-2 | approved | reviewer\n",
             (
                 "# @governance-skip: DEC-1 stale\n"
                 "import pytest\n# @governance-skip: DEC-1 stale\n"
@@ -132,14 +132,14 @@ def test_shared_process_helper_removes_coverage_control_variables(
         ),
         (
             "no_reason",
-            "DEC-1 approved\n",
+            "2026-08-22 | DEC-1 | approved | reviewer\n",
             "import pytest\n# @governance-skip: DEC-1\n@pytest.mark.skip\ndef test_x(): pass\n",
             1,
             "has no valid @governance-skip decision",
         ),
         (
             "unrelated",
-            "DEC-1 approved\n",
+            "2026-08-22 | DEC-1 | approved | reviewer\n",
             (
                 "# @governance-skip: DEC-1 unrelated\nVALUE = 1\n"
                 "import pytest\n@pytest.mark.skip\ndef test_x(): pass\n"
@@ -160,7 +160,7 @@ def test_shared_process_helper_removes_coverage_control_variables(
         ),
         (
             "authorized",
-            "DEC-1 approved\n",
+            "2026-08-22 | DEC-1 | approved | reviewer\n",
             (
                 "# @governance-skip: DEC-1 hardware unavailable\n"
                 "import pytest\n# @governance-skip: DEC-1 hardware unavailable\n"

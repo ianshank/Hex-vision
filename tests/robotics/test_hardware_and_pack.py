@@ -27,7 +27,13 @@ def test_hardware_missing_with_decision_is_declared(tmp_path: Path) -> None:
     """A decision log entry naming each runner owns an intentional CI absence."""
     docs = tmp_path / "docs"
     docs.mkdir()
-    (docs / "decision-log.md").write_text("DEC-1 hil_smoke\nDEC-2 sitl_mission", encoding="utf-8")
+    (docs / "decision-log.md").write_text(
+        (
+            "2026-08-22 | DEC-1 | hil_smoke unavailable | reviewer\n"
+            "2026-08-22 | DEC-2 | sitl_mission unavailable | reviewer\n"
+        ),
+        encoding="utf-8",
+    )
     result = HardwareInLoopGate().check(load_config(root=tmp_path, env={}))
     assert result.status is GateStatus.SKIPPED_DECLARED
     assert not result.findings

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from hexvision.config import Config
+from hexvision.decision_log import decision_ids
 from hexvision.gates.model import Finding, GateResult, Severity
 from hexvision.observability import get_logger
 
@@ -61,11 +62,9 @@ def parse_matrix(path: Path, columns: list[str]) -> list[dict[str, str]]:
 
 
 def _decision_ids(config: Config) -> set[str]:
-    """Return configured decision identifiers from the decision log."""
+    """Return identifiers only from records that pass the shared decision-log grammar."""
     decision_path = config.resolve_path("traceability.decision_log_path", clause=_CLAUSE)
-    content = decision_path.read_text(encoding="utf-8")
-    patterns = config.require("traceability.decision_id_patterns", clause=_CLAUSE)
-    return {match.group(0) for pattern in patterns for match in re.finditer(str(pattern), content)}
+    return decision_ids(config, decision_path, clause=_CLAUSE)
 
 
 def _authoritative_requirements(config: Config) -> dict[str, Path]:

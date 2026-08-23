@@ -15,6 +15,7 @@ import pytest
 from pluggy import Result
 
 from hexvision.config import Config, load_config
+from hexvision.decision_log import decision_ids
 from tests.support.process import coverage_controls_sanitized, run_process
 
 _SKIP = re.compile(r"^\s*#\s*@governance-skip:\s*(\S+)\s+(\S.*)\s*$")
@@ -33,7 +34,7 @@ def _authorized_decision(item: pytest.Item) -> str | None:
         lines = path.read_text(encoding="utf-8").splitlines()
         config = load_config(root=Path(item.config.rootpath))
         decision_log = config.resolve_path("traceability.decision_log_path")
-        decisions = decision_log.read_text(encoding="utf-8")
+        decisions = decision_ids(config, decision_log)
         patterns = tuple(config.require("traceability.decision_id_patterns"))
     except Exception:
         return None

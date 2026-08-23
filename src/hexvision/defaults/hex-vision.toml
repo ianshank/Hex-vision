@@ -23,7 +23,7 @@ env_prefix = "HEXVISION_"
 # silently-honoured override. Coverage floors are frozen for the reason the
 # contract states; safety envelopes are frozen because a flight-safety bound
 # changed from a shell leaves no reviewable diff.
-prefixes = ["coverage", "robotics.safety_envelope", "contract"]
+prefixes = ["coverage", "robotics.safety_envelope", "contract", "decision_log"]
 
 # --------------------------------------------------------------------------
 # The Gate Harness Contract this repository implements.
@@ -125,6 +125,26 @@ authorization_id = "G-PUB"
 # Keep the authority record configurable for adopters with a different governed
 # document location; a prose mention is insufficient because the gate parses rows.
 decision_log_path = "docs/decision-log.md"
+
+# --------------------------------------------------------------------------
+# Append-only decision-log record grammar.  It is frozen because changing how
+# authority is recognized changes the meaning of already-recorded approvals.
+# Different adopters may use a different reviewed schema in their repository
+# config, but no shell-level override can relax it during a gate run.
+# --------------------------------------------------------------------------
+[decision_log]
+# Records may be bare pipe rows or conventional leading/trailing-pipe Markdown
+# rows; either spelling must contain exactly these configured cells in order.
+columns = ["date", "id", "decision", "recorded-by"]
+date_column = "date"
+identifier_column = "id"
+date_format = "%Y-%m-%d"
+required_columns = ["date", "id", "decision", "recorded-by"]
+placeholder_values = ["", "-", "n/a", "tbd"]
+delimiter = "|"
+# Examples in code fences and HTML comments are documentation, never authority.
+fenced_code_markers = ["```", "~~~"]
+html_comment_delimiters = ["<!--", "-->"]
 
 # --------------------------------------------------------------------------
 # Requirement traceability lint.

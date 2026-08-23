@@ -89,6 +89,12 @@ def normalize_remote_url(  # noqa: PLR0911, PLR0912 - each rejection preserves a
             return _blocked(original, "remote URL contains an empty username")
         if parsed.password is not None:
             return _blocked(original, "remote URL contains userinfo with a password or token")
+        if parsed.query and parsed.fragment:
+            return _blocked(original, "remote URL contains query and fragment components")
+        if parsed.query:
+            return _blocked(original, "remote URL contains a query component")
+        if parsed.fragment:
+            return _blocked(original, "remote URL contains a fragment component")
         host = parsed.hostname
         path = parsed.path
     elif "@" in value and ":" in value:
