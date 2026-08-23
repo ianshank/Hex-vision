@@ -79,7 +79,7 @@ Hex-vision is modular, but its extension mechanisms are intentionally precise:
 - **Invariant verifiers** are discovered from the `hexvision.invariant_verifiers` entry-point group. A verifier proves that a declared invariant mechanism detects a synthetic violation.
 - **Projection renderers** are looked up from the in-process renderer registry in `hexvision.projections`; configured outputs name the renderer. They are dynamically selected by configuration, not registered as Python entry points in this release.
 
-This separation is deliberate: adding a stack means installing a pack package rather than changing core, while a pack can bring its own domain gates and, where needed, an invariant verifier. Read [the architecture guide](docs/ARCHITECTURE.md) for interfaces, configuration provenance, and a worked pack walkthrough.
+This separation is deliberate: adding a stack means installing a pack package rather than changing core, while a pack can bring its own domain gates and, where needed, an invariant verifier. Read [the architecture guide](docs/ARCHITECTURE.md) for interfaces, configuration provenance, and a worked pack walkthrough; [the C4 architecture set](docs/architecture/README.md) maps the system through context, container, component, and safety-relevant code levels.
 
 ### Write a new pack
 

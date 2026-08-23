@@ -12,7 +12,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Final, Literal, TypedDict, cast
 
-TaskStatus = Literal["todo", "in-progress", "done", "blocked"]
+TaskStatus = Literal["todo", "in-progress", "done", "blocked", "deferred"]
 
 
 class TaskData(TypedDict):
@@ -71,7 +71,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "0.1",
                     "title": "Write or verify failing configuration scenarios",
                     "requirement_ids": ["R-1", "R-2"],
-                    "status": "in-progress",
+                    "status": "done",
                     "estimate_hours": 4,
                     "depends_on": [],
                 },
@@ -103,7 +103,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "0.5",
                     "title": "Update M0 traceability",
                     "requirement_ids": ["R-1", "R-2"],
-                    "status": "todo",
+                    "status": "done",
                     "estimate_hours": 2,
                     "depends_on": ["0.1"],
                 },
@@ -120,7 +120,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "1.1",
                     "title": "Write failing contract-control tests",
                     "requirement_ids": ["R-3", "R-4", "R-8", "R-9", "R-18"],
-                    "status": "in-progress",
+                    "status": "done",
                     "estimate_hours": 8,
                     "depends_on": [],
                 },
@@ -128,7 +128,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "1.2",
                     "title": "Implement core contract-control modules",
                     "requirement_ids": ["R-3", "R-4", "R-8", "R-9", "R-18"],
-                    "status": "in-progress",
+                    "status": "deferred",
                     "estimate_hours": 16,
                     "depends_on": ["1.1"],
                 },
@@ -136,7 +136,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "1.3",
                     "title": "Update M1 traceability",
                     "requirement_ids": ["R-3", "R-4", "R-8", "R-9", "R-18"],
-                    "status": "todo",
+                    "status": "done",
                     "estimate_hours": 4,
                     "depends_on": ["1.2"],
                 },
@@ -153,7 +153,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "2.1",
                     "title": "Write failing traceability and projection tests",
                     "requirement_ids": ["R-5", "R-6", "R-7"],
-                    "status": "in-progress",
+                    "status": "done",
                     "estimate_hours": 6,
                     "depends_on": [],
                 },
@@ -161,7 +161,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "2.2",
                     "title": "Implement traceability lint and projections",
                     "requirement_ids": ["R-5", "R-6", "R-7"],
-                    "status": "in-progress",
+                    "status": "done",
                     "estimate_hours": 10,
                     "depends_on": ["2.1"],
                 },
@@ -169,7 +169,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "2.3",
                     "title": "Update M2 traceability",
                     "requirement_ids": ["R-5", "R-6", "R-7"],
-                    "status": "todo",
+                    "status": "done",
                     "estimate_hours": 4,
                     "depends_on": ["2.2"],
                 },
@@ -188,7 +188,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "3.1",
                     "title": "Write failing edge-AI evidence-gate tests",
                     "requirement_ids": ["R-10", "R-11", "R-12"],
-                    "status": "in-progress",
+                    "status": "done",
                     "estimate_hours": 10,
                     "depends_on": [],
                 },
@@ -196,7 +196,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "3.2",
                     "title": "Implement edge-AI evidence gates and examples",
                     "requirement_ids": ["R-10", "R-11", "R-12"],
-                    "status": "in-progress",
+                    "status": "done",
                     "estimate_hours": 18,
                     "depends_on": ["3.1"],
                 },
@@ -204,7 +204,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "3.3",
                     "title": "Update M3 traceability",
                     "requirement_ids": ["R-10", "R-11", "R-12"],
-                    "status": "todo",
+                    "status": "done",
                     "estimate_hours": 4,
                     "depends_on": ["3.2"],
                 },
@@ -221,7 +221,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "4.1",
                     "title": "Write failing safety and HIL tests",
                     "requirement_ids": ["R-13", "R-14", "R-15"],
-                    "status": "in-progress",
+                    "status": "done",
                     "estimate_hours": 10,
                     "depends_on": [],
                 },
@@ -229,7 +229,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "4.2",
                     "title": "Implement safety-envelope and HIL gates",
                     "requirement_ids": ["R-13", "R-14", "R-15"],
-                    "status": "in-progress",
+                    "status": "deferred",
                     "estimate_hours": 14,
                     "depends_on": ["4.1"],
                 },
@@ -237,7 +237,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "4.3",
                     "title": "Update M4 traceability",
                     "requirement_ids": ["R-13", "R-14", "R-15"],
-                    "status": "todo",
+                    "status": "done",
                     "estimate_hours": 4,
                     "depends_on": ["4.2"],
                 },
@@ -257,7 +257,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "5.1",
                     "title": "Write failing publication and non-commanding-boundary tests",
                     "requirement_ids": ["R-16", "R-17"],
-                    "status": "in-progress",
+                    "status": "done",
                     "estimate_hours": 6,
                     "depends_on": [],
                 },
@@ -265,7 +265,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "5.2",
                     "title": "Integrate hooks, CI, skills, and peer review",
                     "requirement_ids": ["R-16", "R-17"],
-                    "status": "in-progress",
+                    "status": "deferred",
                     "estimate_hours": 10,
                     "depends_on": ["5.1", "1.2", "2.2", "3.2", "4.2"],
                 },
@@ -273,7 +273,7 @@ _DATA: Final[RoadmapData] = {
                     "id": "5.3",
                     "title": "Update final traceability and regenerate projections",
                     "requirement_ids": ["R-16", "R-17"],
-                    "status": "todo",
+                    "status": "done",
                     "estimate_hours": 4,
                     "depends_on": ["5.2"],
                 },
@@ -432,7 +432,9 @@ def validate() -> None:
     task_ids = [task["id"] for task in tasks]
     _require_unique("task", task_ids)
     task_id_set = set(task_ids)
-    allowed_statuses: frozenset[str] = frozenset({"todo", "in-progress", "done", "blocked"})
+    allowed_statuses: frozenset[str] = frozenset(
+        {"todo", "in-progress", "done", "blocked", "deferred"}
+    )
 
     for task in tasks:
         if task["status"] not in allowed_statuses:

@@ -1,0 +1,14 @@
+# Optional integration for teams that use the pre-commit framework. The native
+# installer also installs the same fast check, so local protection does not
+# depend on this optional wrapper being present.
+default_install_hook_types: [pre-commit]
+default_stages: [pre-commit]
+repos:
+  - repo: local
+    hooks:
+      - id: hexvision-fast-feedback
+        name: Hex-vision fast feedback (Ruff and staged secret scan)
+        entry: bash scripts/pre_commit_check.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
