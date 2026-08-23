@@ -143,30 +143,86 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(LOGGER_ROOT if suffix == LOGGER_ROOT else f"{LOGGER_ROOT}.{suffix}")
 
 
+# Human-readable label and log level for each terminal gate status, keyed by the
+# `GateStatus` *value* rather than the enum itself so this module stays free of any
+# import from `hexvision.gates` — `gates.base` imports this module, and the reverse
+# edge would close a cycle.
+#
+# The distinction preserved here is load-bearing, not cosmetic. BLOCKED means the
+# gate could not look; FAILED means it looked and found a violation. Collapsing both
+# to "FAIL" in the operator-facing line is how a gate that never actually ran gets
+# mistaken for a gate that ran and disagreed, which is the precise failure mode this
+# harness exists to make impossible.
+_VERDICT_LABELS: Final[dict[str, tuple[str, int]]] = {
+    "passed": ("PASS", logging.INFO),
+    "failed": ("FAIL", logging.ERROR),
+    "blocked": ("BLOCKED", logging.ERROR),
+    # A declared capability gap is neither a pass nor a violation. It logs at WARNING
+    # so it is visible in a filtered log without masquerading as a clean result.
+    "skipped-declared": ("SKIPPED (DECLARED)", logging.WARNING),
+}
+
+
 def log_verdict(
     logger: logging.Logger,
     *,
     gate: str,
-    passed: bool,
+    passed: bool | None = None,
+    status: str | None = None,
     clause: str | None = None,
     **context: Any,
 ) -> None:
-    """Emit a gate verdict at a level that matches its severity.
+    """Emit a gate verdict at a level and label that match its severity.
 
-    A passing gate logs at INFO and a failing gate at ERROR, so a CI log filtered
-    to ERROR shows exactly the findings and nothing else.
+    Prefer ``status``, which carries the full four-state model. ``passed`` remains
+    accepted because it is published surface, and callers that only know a boolean
+    still get correct output; it simply cannot express BLOCKED.
+
+    A passing gate logs at INFO, a declared gap at WARNING, and both a failure and a
+    block at ERROR, so a CI log filtered to ERROR shows exactly the gates that did
+    not pass and nothing else.
 
     Args:
         logger: Logger to emit through.
         gate: Target name, matching the Makefile target that invoked it.
-        passed: The verdict.
+        passed: Boolean verdict, used only when ``status`` is absent.
+        status: A ``GateStatus`` value such as ``"blocked"``. Takes precedence.
         clause: Contract clause or invariant id being enforced.
         **context: Structured detail included verbatim in JSON output.
+
+    Raises:
+        ValueError: If neither ``passed`` nor ``status`` is supplied, or if
+            ``status`` is not a recognised gate status. An unrecognised status is
+            refused rather than guessed: silently labelling an unknown verdict
+            "FAIL" would reintroduce the ambiguity this mapping removes.
     """
+    if status is not None:
+        if status not in _VERDICT_LABELS:
+            raise ValueError(
+                f"unknown gate status {status!r}; expected one of {sorted(_VERDICT_LABELS)}"
+            )
+        label, level = _VERDICT_LABELS[status]
+        verdict = status
+    elif passed is not None:
+        label, level = _VERDICT_LABELS["passed" if passed else "failed"]
+        verdict = "pass" if passed else "fail"
+    else:
+        raise ValueError("log_verdict requires either 'status' or 'passed'")
+
     logger.log(
-        logging.INFO if passed else logging.ERROR,
+        level,
         "gate %s: %s",
         gate,
-        "PASS" if passed else "FAIL",
-        extra={"gate": gate, "verdict": "pass" if passed else "fail", "clause": clause, **context},
+        label,
+        # `status` is echoed into the record as well as driving the label. It was
+        # previously supplied by callers as free-form context and appeared in JSON
+        # output under that key; promoting it to a named parameter must not remove a
+        # field that log consumers already parse.
+        extra={
+            "gate": gate,
+            "verdict": verdict,
+            "status": status,
+            "clause": clause,
+            **context,
+        },
     )

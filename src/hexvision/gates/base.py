@@ -169,7 +169,9 @@ def run_gate(gate: Gate, config: Config) -> GateResult:
     log_verdict(
         _LOG,
         gate=result.gate,
-        passed=result.status.is_pass,
+        # Pass the full status, not `status.is_pass`. A boolean cannot express
+        # BLOCKED, and reporting a gate that could not run as "FAIL" hides the one
+        # distinction an operator most needs to act on.
         clause=result.clause,
         status=result.status.value,
         findings=len(result.findings),

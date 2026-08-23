@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -184,3 +185,48 @@ def test_model_rejections_sorting_and_target_spec_validation() -> None:
         TargetSpec("x", ())
     with pytest.raises(ValueError):
         TargetSpec("x", ("tool",), fail_closed_on_missing_tool=False)
+
+
+# Traceability: R-18
+def test_log_verdict_preserves_the_four_state_gate_model() -> None:
+    """A blocked gate must never be reported to an operator as a failure.
+
+    BLOCKED means the gate could not look; FAILED means it looked and found a
+    violation. Collapsing the two is how a gate that never ran gets mistaken for a
+    gate that ran and disagreed, so each status gets its own label and log level.
+    """
+    cases = {
+        "passed": ("PASS", logging.INFO),
+        "failed": ("FAIL", logging.ERROR),
+        "blocked": ("BLOCKED", logging.ERROR),
+        "skipped-declared": ("SKIPPED (DECLARED)", logging.WARNING),
+    }
+    for status, (label, level) in cases.items():
+        stream = io.StringIO()
+        logger = configure_logging(fmt="json", env={}, stream=stream)
+        logger.setLevel(logging.DEBUG)
+        log_verdict(logger, gate="publication", status=status, clause="R-17")
+        logged = json.loads(stream.getvalue())
+        assert logged["message"] == f"gate publication: {label}", status
+        assert logged["verdict"] == status
+        assert logged["status"] == status
+        assert logged["level"] == logging.getLevelName(level), status
+
+
+# Traceability: R-18
+def test_log_verdict_keeps_the_published_boolean_path_working() -> None:
+    """`passed` is published surface, so it must keep working unchanged."""
+    stream = io.StringIO()
+    logger = configure_logging(fmt="json", env={}, stream=stream)
+    log_verdict(logger, gate="remotes", passed=True, clause="INV-3")
+    assert json.loads(stream.getvalue())["verdict"] == "pass"
+
+
+# Traceability: R-18
+def test_log_verdict_refuses_an_unknown_or_absent_verdict() -> None:
+    """An unrecognised status is refused rather than defaulted to a failure label."""
+    logger = configure_logging(fmt="json", env={}, stream=io.StringIO())
+    with pytest.raises(ValueError, match="unknown gate status"):
+        log_verdict(logger, gate="x", status="probably-fine")
+    with pytest.raises(ValueError, match="requires either"):
+        log_verdict(logger, gate="x")
