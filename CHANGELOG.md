@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Made scanner installation and invocation release-binary based where Go is unavailable, with scanner identity verified from frozen configuration.
 - Made traceability evidence depend on source requirements, collected test nodes, and matching executable test markers rather than matrix prose alone.
 - Changed release aggregation so an authorised declared skip passes while remaining visible through a counted summary and a listing of each skip against its authorising decision, replacing a red exit that made the decision log decorative. An absence with no recorded authority fails and names its gate. Recorded as DEC-015.
+- Widened the decision-log record schema from 4 columns to 7, adding `subject`, `status`, and `supersedes` for the shared authority verifier required by DEC-016. All 13 pre-existing records were migrated with their first four cells preserved byte-for-byte, mechanically verified before merge; two (DEC-013, DEC-014) were additionally reconfirmed under the widened schema via new records that supersede them (DEC-019, DEC-020). Recorded as DEC-018.
 
 ### Fixed
 

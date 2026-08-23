@@ -132,7 +132,8 @@ def test_safety_widening_with_valid_decision_passes(passing_repo: Any) -> None:
     docs = root / "docs"
     docs.mkdir()
     (docs / "decision-log.md").write_text(
-        "2026-08-22 | DEC-42 | approved altitude review | reviewer", encoding="utf-8"
+        "2026-08-22 | DEC-42 | approved altitude review | reviewer | - | active | -",
+        encoding="utf-8",
     )
     baseline = {
         "max_altitude_m": 80,
