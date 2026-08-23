@@ -37,7 +37,7 @@
 ## 6. Shared authority verification (DEC-016 corrective action, Order 0)
 - [x] 6.1 Widen the decision-log record schema to carry machine-readable subject and lifecycle fields, migrating every existing record with byte-preserved original cells and reconfirming DEC-013/DEC-014 via supersession (DEC-017–DEC-020). Evidence: merged PR #2; mechanical fidelity check recorded in its description.
 - [x] 6.2 Implement `hexvision.authority.verify_authority` returning a typed `VerifiedAuthority` no gate can construct, with exact-subject matching, active-status and supersession precedence, fail-closed supersedes-graph validation, and a conformance guard rejecting any second declaration or external construction site (R-20). Evidence: `tests/core/test_authority.py` and the R-20 conformance tests collect and pass.
-- [ ] 6.3 Migrate release aggregation and hardware-in-the-loop authority checks to the shared verifier, forwarding verified authority through `run_gate` structurally, with the PEER-REVIEW-3 forged-authority exploits reproduced as failing fixtures.
+- [x] 6.3 Migrate release aggregation and hardware-in-the-loop authority checks to the shared verifier, forwarding verified authority through `run_gate` structurally, with the PEER-REVIEW-3 forged-authority exploits reproduced as failing fixtures. Evidence: `GateResult.declared_skip_authority` carries verifier-minted authority through `dataclasses.replace` in `run_gate`; aggregation trusts only typed authority whose subject names the producing gate; the forged-string, borrowed-authority, prose-mention, and withdrawn-record exploits collect as R-15/R-19 fixtures.
 - [ ] 6.4 Require a reviewed agent/skill definition manifest in agent validation, print authorized skips in human-readable release output, and add the authority-verification-authoring skill with structural cross-references.
 
 ## Deferred remediation register
@@ -47,3 +47,5 @@
 - **M1:** release orchestration and configuration/tool provenance (GAP-01, GAP-02, HC-01, HC-02, LOOP-01);
 - **M4:** safety baseline failure classification and hostile filesystem boundaries (SAFE-01, TEST-01, LOG-01);
 - **M5:** authoritative all-active-pack loop wiring and branch-protection verification.
+
+Task 6.3's peer review recorded two accepted bounds on the shared verifier, deferred rather than hidden: verified authority is not bound to the identity of the ledger that minted it (`verify_authority` is public, so a caller resolving a configuration rooted elsewhere mints genuine authority — stated in the module contract), and declared-skip subjects are gate-scoped, not pack-scoped (moot with one active pack; a second active pack registering a same-named gate would share the subject namespace). Closing both means binding minted authority to the resolved ledger identity and adding a pack segment to the subject grammar.
