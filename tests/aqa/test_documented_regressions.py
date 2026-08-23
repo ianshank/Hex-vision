@@ -80,7 +80,7 @@ def test_aqa_comment_shaped_publication_authority_is_blocked(tmp_repo: Any) -> N
     """A pseudo-row was inspected but cannot authorize release, so it remains BLOCKED."""
 
     root = tmp_repo('[remotes]\nallowlist=["github.com/acme/release"]\n')
-    _decision_log(root, "# 2026-08-22 | G-PUB | illustrative only | reviewer\n")
+    _decision_log(root, "# 2026-08-22 | G-PUB | illustrative only | reviewer | - | active | -\n")
 
     result = PublicationGate("https://github.com/acme/release.git").check(
         load_config(root=root, env={})

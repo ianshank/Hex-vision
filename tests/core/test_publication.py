@@ -24,7 +24,7 @@ def _publication_repo(root: Path, decision_log: str = "") -> None:
 def test_publication_blocks_without_g_pub_authorization(tmp_repo: Any) -> None:
     """An approved destination still cannot publish before its named gate is recorded."""
     root = tmp_repo('[remotes]\nallowlist=["github.com/acme/release"]\n')
-    _publication_repo(root, "2026-08-22 | G-PUB | | reviewer\n")
+    _publication_repo(root, "2026-08-22 | G-PUB | | reviewer | - | active | -\n")
 
     result = PublicationGate("https://github.com/acme/release.git").check(
         load_config(root=root, env={})
@@ -76,7 +76,7 @@ def test_publication_rejects_credential_destination_with_normalizer_reason(tmp_r
 def test_publication_permits_normalized_allowlisted_destination_with_g_pub(tmp_repo: Any) -> None:
     """Publication proceeds only when both independently governed conditions hold."""
     root = tmp_repo('[remotes]\nallowlist=["github.com/acme/release"]\n')
-    _publication_repo(root, "2026-08-22 | G-PUB | authorized release | reviewer\n")
+    _publication_repo(root, "2026-08-22 | G-PUB | authorized release | reviewer | - | active | -\n")
 
     result = PublicationGate("git@github.com:Acme/Release.git").check(
         load_config(root=root, env={})
@@ -90,7 +90,7 @@ def test_publication_permits_normalized_allowlisted_destination_with_g_pub(tmp_r
     ("decision_log", "line_number", "reason"),
     [
         (
-            "# 2026-08-22 | G-PUB | approved release | reviewer\n",
+            "# 2026-08-22 | G-PUB | approved release | reviewer | - | active | -\n",
             1,
             "date cell does not match configured format '%Y-%m-%d'",
         ),
@@ -122,35 +122,35 @@ def test_publication_permits_normalized_allowlisted_destination_with_g_pub(tmp_r
         (
             "2026-08-22 | G-PUB | approved release\n",
             1,
-            "row has 3 cells; configured schema requires 4",
+            "row has 3 cells; configured schema requires 7",
         ),
         (
-            "2026-08-22 | G-PUB | approved release | reviewer | extra\n",
+            "2026-08-22 | G-PUB | approved release | reviewer | - | active | - | extra\n",
             1,
-            "row has 5 cells; configured schema requires 4",
+            "row has 8 cells; configured schema requires 7",
         ),
         (
-            "2026-8-22 | G-PUB | approved release | reviewer\n",
+            "2026-8-22 | G-PUB | approved release | reviewer | - | active | -\n",
             1,
             "date cell does not match configured format '%Y-%m-%d'",
         ),
         (
-            "2026-08-22 | G-PUB |  | reviewer\n",
+            "2026-08-22 | G-PUB |  | reviewer | - | active | -\n",
             1,
             "required cell 'decision' is blank or a configured placeholder",
         ),
         (
-            "2026-08-22 | G-PUB | TBD | reviewer\n",
+            "2026-08-22 | G-PUB | TBD | reviewer | - | active | -\n",
             1,
             "required cell 'decision' is blank or a configured placeholder",
         ),
         (
-            "2026-08-22 | G-PUB | - | reviewer\n",
+            "2026-08-22 | G-PUB | - | reviewer | - | active | -\n",
             1,
             "required cell 'decision' is blank or a configured placeholder",
         ),
         (
-            "2026-08-22 | G-PUB | N/A | reviewer\n",
+            "2026-08-22 | G-PUB | N/A | reviewer | - | active | -\n",
             1,
             "required cell 'decision' is blank or a configured placeholder",
         ),
@@ -302,7 +302,7 @@ def test_publication_cli_accepts_destination_and_uses_config_default(
         "\n[publication]\n"
         'default_destination="github.com/acme/release"\n'
     )
-    _publication_repo(root, "2026-08-22 | G-PUB | authorized release | reviewer\n")
+    _publication_repo(root, "2026-08-22 | G-PUB | authorized release | reviewer | - | active | -\n")
     monkeypatch.chdir(root)
 
     assert main(["publication"]) == 0
