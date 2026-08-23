@@ -37,3 +37,11 @@ parts of the codebase encoded opposite answers to the same question.
 -->
 
 | 2026-08-22 | DEC-015 | An authorised declared skip passes the release aggregate; an unauthorised one does not. Two parts of the codebase disagreed: the status mapping documented that the authorising decision-log entry converts a declared skip to a pass, while the release aggregate returned a red exit for every declared skip regardless of authority. The mapping wins, because the alternative makes the decision log decorative: no release could ever go green while a documented and owned exception existed, so the incentive would be to delete the skip rather than record it. Visibility is preserved separately rather than through the exit code: the aggregate counts declared skips in its summary and lists each one against the decision that authorises it. Absences with no authority are reported BLOCKED by the producing gate, so they cannot reach this path unnoticed. | architect |
+
+<!--
+DEC-016 records a deliberate stop. The three findings behind it are instances
+of one root cause, and the response to a third recurrence is a design change,
+not a third round of point fixes.
+-->
+
+| 2026-08-22 | DEC-016 | Release is not authorised, and the three open authority findings will not be point-patched. Three independent sites accept authority without verifying it: release aggregation treats any non-empty decision_id string as authorisation, hardware-in-loop matches a runner name as a substring of the entire joined record so an unrelated subject or a withdrawn record authorises a skip, and agent validation passes with zero discovered definitions. This is the third review cycle in which the same class has appeared at new sites after being fixed at old ones, which identifies the root cause as architectural rather than local: authority checking is re-implemented per site, and each re-implementation is wrong differently. The corrective action is a single authority verifier that returns typed verified-authority values which a gate cannot construct itself, an authority record schema carrying explicit machine-readable subject and lifecycle fields, and aggregation that accepts only that type. Point-fixing the three known sites would leave the mechanism that produced them intact. | architect |
