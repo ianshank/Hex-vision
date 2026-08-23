@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Final
 
+from hexvision.authority import VerifiedAuthority, joined_decision_ids
 from hexvision.errors import ExitCode
 
 __all__ = ["Finding", "GateResult", "GateStatus", "Severity"]
@@ -175,6 +176,13 @@ class GateResult:
         measurements: Values the gate measured, for the audit trail. A gate that
             asserts a threshold was met without recording what it measured
             cannot be re-examined later.
+        declared_skip_authority: Verifier-minted authority per absent runner,
+            present only on declared-skip results. This is the value release
+            aggregation trusts; the ``decision_id`` measurement derived from it
+            is display only. Deliberately excluded from :meth:`to_dict`:
+            :class:`~hexvision.authority.VerifiedAuthority` is process-local
+            trust, and a JSON round-trip would launder it back into forgeable
+            string data.
     """
 
     gate: str
@@ -183,6 +191,7 @@ class GateResult:
     summary: str
     findings: tuple[Finding, ...] = ()
     measurements: Mapping[str, Any] = field(default_factory=dict)
+    declared_skip_authority: Mapping[str, VerifiedAuthority] | None = None
 
     def __post_init__(self) -> None:
         """Reject internally inconsistent results.
@@ -322,26 +331,63 @@ class GateResult:
         )
 
     @classmethod
-    def skipped_declared(
+    def skipped_declared(  # noqa: PLR0913 - keyword-only fields; see blocked()'s note.
         cls,
         gate: str,
         *,
         summary: str,
         reason: str,
-        decision_id: str | None,
+        decision_id: str | None = None,
+        authority: Mapping[str, VerifiedAuthority] | None = None,
         clause: str | None = None,
     ) -> GateResult:
         """Build a declared-skip result for a gate whose runner is absent.
 
         Args:
-            decision_id: The decision-log entry authorising the absence. When
-                ``None`` the result carries a Blocker finding, because an
+            decision_id: Display-only identifier for an absence that has NOT
+                been resolved through the shared verifier. It never authorises:
+                release aggregation trusts only ``authority``, so a result built
+                with a bare id fails the release verdict — the PEER-REVIEW-3
+                forged-string exploit. When both this and ``authority`` are
+                absent the result carries a Blocker finding, because an
                 unauthorised skip is the failure mode this status exists to make
                 visible rather than to excuse.
+            authority: Verifier-minted authority per absent runner. The
+                ``decision_id`` measurement is derived from it here — the single
+                reconciliation point between the typed mapping and the joined
+                display string — so the two shapes can never disagree. Mutually
+                exclusive with ``decision_id`` for the same reason.
+
+        Raises:
+            ValueError: If both ``decision_id`` and ``authority`` are supplied,
+                or ``authority`` is an empty mapping.
+            TypeError: If any ``authority`` value is not a verifier-minted
+                :class:`~hexvision.authority.VerifiedAuthority`.
         """
+        if authority is not None:
+            if decision_id is not None:
+                raise ValueError(
+                    f"gate {gate!r} passed both a bare decision_id and verified "
+                    "authority; pass one, never both — the display id is derived "
+                    "from the authority so the two shapes cannot disagree"
+                )
+            if not authority:
+                raise ValueError(
+                    f"gate {gate!r} attached an empty authority mapping; an empty "
+                    "mapping authorises nothing and must be passed as None"
+                )
+            fakes = sorted(
+                key for key, value in authority.items() if not isinstance(value, VerifiedAuthority)
+            )
+            if fakes:
+                raise TypeError(
+                    f"gate {gate!r} attached authority that is not verifier-minted "
+                    f"for: {', '.join(fakes)}"
+                )
+        effective_id = joined_decision_ids(authority) if authority else decision_id
         findings = (
             ()
-            if decision_id
+            if effective_id
             else (
                 Finding(
                     id=f"{gate.upper()}-UNDECLARED-SKIP",
@@ -364,7 +410,8 @@ class GateResult:
             clause=clause,
             summary=summary,
             findings=findings,
-            measurements={"decision_id": decision_id, "reason": reason},
+            measurements={"decision_id": effective_id, "reason": reason},
+            declared_skip_authority=dict(authority) if authority else None,
         )
 
     def to_dict(self) -> dict[str, Any]:
